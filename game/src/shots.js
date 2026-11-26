@@ -146,11 +146,13 @@ export function stageShot(name) {
       if (plane.landed || plane.crashed) break;
     }
     // The runway projects dead-centre behind the plane sprite; step the
-    // staged plane to the side so the strip reads beside it. 55 m, not
-    // 90 m: the smaller step keeps the strip and its drop zone centred
-    // in the frame and clear of the HUD panels.
-    plane.x += Math.cos(strip.heading) * 55;
-    plane.z += -Math.sin(strip.heading) * 55;
+    // staged plane to the side so the strip reads beside it. 100 m: the
+    // offset views the strip at an angle, so it reads as a long diagonal
+    // like v1 (the v2 55 m step left it head-on and foreshortened, small
+    // and pushed to the edge), and the drop zone stays clear of the HUD
+    // panels once the renderer clips it out of the panel rect.
+    plane.x += Math.cos(strip.heading) * 100;
+    plane.z += -Math.sin(strip.heading) * 100;
     plane.bank = 0.05;
     // The autopilot runs the throttle up in the sim; set a calm approach
     // speed for the frame.
