@@ -20,6 +20,106 @@ function islandsFor(seed) {
   return list;
 }
 
+// Coastal settlements, generated from the terrain seed so every region
+// has its own town in the same place every flight. One sits beside the
+// region's home strip (on the flattened ground, clear of the runway),
+// one on the shore of the region's largest island. Buildings are small
+// shaded blocks with varied roofs; the renderer extrudes them with the
+// projector, so they are real 3-D boxes in the world, not decals. All
+// deterministic. `heightAt` filters the island town to the flat coastal
+// band (2-30 m): a town on a steep dome slope reads as floating white
+// boxes, so only shore-level plots are kept.
+function townsFor(seed, islands, heightAt) {
+  const rng = createRandom(seed * 31 + 7);
+  const towns = [];
+  const roofs = [
+    [176, 92, 58], [74, 80, 92], [122, 88, 60], [96, 104, 88], [188, 172, 140],
+  ];
+  // `rot` is the town frame: { fx, fz } along, { px, pz } across. The
+  // strip town uses the strip's frame so its spread never crosses the
+  // runway; the island town uses the world axes.
+  function makeTown(cx, cz, spreadAlong, spreadAcross, count, seaDir, rot, maxH) {
+    const buildings = [];
+    const fx = rot ? rot.fx : 1;
+    const fz = rot ? rot.fz : 0;
+    const px = rot ? rot.px : 0;
+    const pz = rot ? rot.pz : 1;
+    for (let i = 0; i < count; i += 1) {
+      // Jittered grid with gaps left as streets.
+      const ga = (i % 7) - 3;
+      const gc = Math.floor(i / 7) - 2;
+      if (rng.next() < 0.22) continue;
+      const along = ga * (spreadAlong / 3.4) + rng.range(-14, 14);
+      const across = gc * (spreadAcross / 2.4) + rng.range(-12, 12);
+      const bx = cx + along * fx + across * px;
+      const bz = cz + along * fz + across * pz;
+      if (heightAt) {
+        const hC = heightAt(bx, bz);
+        // No building above 40 m anywhere: a locally flat patch near
+        // a peak still passes the slope test, and a strip town from
+        // another region can otherwise leave a house on a mountaintop.
+        // Real strip towns sit at ~14 m, island towns at 2-30 m.
+        if (hC > 40) continue;
+        if (maxH !== undefined && (hC < 2 || hC > maxH)) continue;
+        // Only flat plots: a building on a slope reads as a floating
+        // box, however deep its base is sunk. The mountain face keeps
+        // 2-30 m patches where the hill noise cancels the dome, so
+        // height alone cannot filter it — slope can.
+        const hSlope = Math.max(
+          Math.abs(heightAt(bx + 25, bz) - hC),
+          Math.abs(heightAt(bx - 25, bz) - hC),
+          Math.abs(heightAt(bx, bz + 25) - hC),
+          Math.abs(heightAt(bx, bz - 25) - hC),
+        );
+        if (hSlope > 10) continue;
+      }
+      const dist = Math.hypot(ga / 3, gc / 2);
+      buildings.push({
+        x: bx, z: bz,
+        w: rng.range(10, 20), d: rng.range(8, 16),
+        h: rng.range(6, 11) + Math.max(0, 1 - dist) * 7,
+        roof: roofs[Math.floor(rng.next() * roofs.length)],
+        swap: rng.next() < 0.5,
+        shade: rng.range(0.62, 0.95),
+      });
+    }
+    return { x: cx, z: cz, buildings, seaDir: seaDir || null, rot: rot || null };
+  }
+  // One town per region, beside its strip, ON the flattened ground:
+  // the flat corridor around a strip is |along| < 550 and |across| <
+  // 110 (smooth falloff to 750/170), so the town sits at along
+  // 130-390, across 95-145 — beside the runway and past its far end,
+  // never on the mountain slope beyond the flat zone (the first
+  // placement, across 140-260, put houses up the mountain).
+  for (const region of REGIONS) {
+    const strip = region.strip;
+    const fx = Math.sin(strip.heading);
+    const fz = Math.cos(strip.heading);
+    const px = Math.cos(strip.heading);
+    const pz = -Math.sin(strip.heading);
+    towns.push(makeTown(
+      strip.x + fx * 260 + px * 120,
+      strip.z + fz * 260 + pz * 120,
+      260, 50, 42, null, { fx, fz, px, pz },
+    ));
+  }
+  // One more on the shore of the largest island, facing the strip:
+  // 0.85 of the island radius out, where the dome has fallen almost
+  // to sea level, and only shore-level plots are kept.
+  let big = islands[0];
+  for (const isl of islands) if (isl.r > big.r) big = isl;
+  const strip0 = REGIONS[0].strip;
+  const dx = strip0.x - big.x;
+  const dz = strip0.z - big.z;
+  const dl = Math.hypot(dx, dz) || 1;
+  towns.push(makeTown(
+    big.x + (dx / dl) * big.r * 0.85,
+    big.z + (dz / dl) * big.r * 0.85,
+    260, 170, 36, [dx / dl, dz / dl], null, 30,
+  ));
+  return towns;
+}
+
 export function createTerrain(seed) {
   const rng = createRandom(seed);
   const islands = islandsFor(seed);
@@ -98,6 +198,10 @@ export function createTerrain(seed) {
   function groundAt(x, z) {
     return Math.max(height(x, z), SEA_LEVEL);
   }
+
+  // Towns need height() to filter shore plots, so they are built here,
+  // after height is defined.
+  const towns = townsFor(seed, islands, height);
 
   // Deterministic 0..1 speckle for one cell, from its world position:
   // cheap, stateless, and the same every frame, so texture never shimmers.
@@ -195,5 +299,5 @@ export function createTerrain(seed) {
     };
   }
 
-  return { height, groundAt, colour, hashCell, islands, makeProjector };
+  return { height, groundAt, colour, hashCell, islands, towns, makeProjector };
 }
