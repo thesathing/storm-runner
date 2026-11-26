@@ -94,6 +94,9 @@ function composeAhead(world, ringDist, boltSide) {
   plane.bank = 0.15;
   const rng = createRandom(4242);
   world.forcedBolt = stagedBolt(rng, plane, fx, fz, rx * boltSide, rz * boltSide);
+  // The staged bolt lights its own frame: the renderer lifts the whole
+  // scene (terrain, clouds, plane) by this flash, like a real strike.
+  world.forcedFlash = 0.45;
   world.target = target;
 }
 
@@ -143,10 +146,11 @@ export function stageShot(name) {
       if (plane.landed || plane.crashed) break;
     }
     // The runway projects dead-centre behind the plane sprite; step the
-    // staged plane to the side so the strip reads beside it. 90 m, not
-    // 150 m: at 150 m the active drop zone slid half out of the frame.
-    plane.x += Math.cos(strip.heading) * 90;
-    plane.z += -Math.sin(strip.heading) * 90;
+    // staged plane to the side so the strip reads beside it. 55 m, not
+    // 90 m: the smaller step keeps the strip and its drop zone centred
+    // in the frame and clear of the HUD panels.
+    plane.x += Math.cos(strip.heading) * 55;
+    plane.z += -Math.sin(strip.heading) * 55;
     plane.bank = 0.05;
     // The autopilot runs the throttle up in the sim; set a calm approach
     // speed for the frame.
