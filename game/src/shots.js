@@ -79,8 +79,10 @@ function flyToward(world, seconds) {
 
 // Compose a flight frame: put the next ring dead ahead of the plane (a
 // little above the nose so it is not hidden behind the sprite) and a
-// lightning bolt off to one side.
-function composeAhead(world, ringDist, boltSide) {
+// lightning bolt off to one side. `bank` is the staged roll: the cover
+// flies level with a gentle bank through the ring, the rings shot banks
+// INTO the next ring.
+function composeAhead(world, ringDist, boltSide, bank) {
   const { plane } = world;
   const target = currentTarget(world.mission);
   if (!target) return;
@@ -91,7 +93,7 @@ function composeAhead(world, ringDist, boltSide) {
   target.x = plane.x + fx * ringDist;
   target.z = plane.z + fz * ringDist;
   target.y = plane.y + 75;
-  plane.bank = 0.15;
+  plane.bank = bank;
   const rng = createRandom(4242);
   world.forcedBolt = stagedBolt(rng, plane, fx, fz, rx * boltSide, rz * boltSide);
   // The staged bolt lights its own frame: the renderer lifts the whole
@@ -115,9 +117,10 @@ export function stageShot(name) {
   if (name === 'rings') {
     const world = buildWorld(2, 'M3', 77, {});
     // Fly through the first rings inside the storm, then compose the
-    // frame with the next ring ahead and a bolt to the left.
+    // frame with the next ring ahead and a bolt to the left, banking
+    // INTO the ring.
     flyToward(world, 26);
-    composeAhead(world, 300, -1);
+    composeAhead(world, 300, -1, 0.5);
     return { screen: 'play', save: blankSave(), world };
   }
 
@@ -153,7 +156,10 @@ export function stageShot(name) {
     // panels once the renderer clips it out of the panel rect.
     plane.x += Math.cos(strip.heading) * 100;
     plane.z += -Math.sin(strip.heading) * 100;
-    plane.bank = 0.05;
+    plane.bank = 0.08;
+    // Slight flare pose for the frame: nose a touch up on final, gear
+    // down, aligned with the runway centreline.
+    plane.pitch = 0.05;
     // The autopilot runs the throttle up in the sim; set a calm approach
     // speed for the frame.
     plane.speed = 50;
@@ -169,7 +175,8 @@ export function stageShot(name) {
   const { plane } = world;
   plane.throttle = 0.78;
   flyToward(world, 20);
-  composeAhead(world, 320, 1);
+  // Gentle ~20 degree bank through the ring, level flight.
+  composeAhead(world, 320, 1, 0.35);
   world.target = currentTarget(world.mission);
   return { screen: 'play', save: blankSave(), world };
 }
