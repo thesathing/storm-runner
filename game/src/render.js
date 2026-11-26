@@ -24,40 +24,98 @@ export function createRenderer(canvas) {
 
   function setShake(v) { shake = Math.max(shake, v); }
 
+  // ---- small colour helpers (64-bit look: everything is shaded, nothing
+  // is one flat fill) ------------------------------------------------------
+  function clamp01(v) { return v < 0 ? 0 : v > 1 ? 1 : v; }
+  function parseHex(hex) {
+    return [parseInt(hex.slice(1, 3), 16), parseInt(hex.slice(3, 5), 16), parseInt(hex.slice(5, 7), 16)];
+  }
+  function css(rgb, a = 1) {
+    return `rgba(${rgb[0] | 0}, ${rgb[1] | 0}, ${rgb[2] | 0}, ${a})`;
+  }
+  function mix(a, b, t) {
+    return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+  }
+  function lit(rgb, f) {
+    return [Math.min(255, rgb[0] * f), Math.min(255, rgb[1] * f), Math.min(255, rgb[2] * f)];
+  }
+  // Distance fog: 0 up close, up to 0.85 far away; far terrain dissolves
+  // into the horizon haze instead of ending in a hard edge.
+  function fogFactor(dist) {
+    return clamp01((dist - 1000) / 2400) * 0.85;
+  }
+  // Haze colour for a region: its warm horizon tone, for fog and haze.
+  function hazeRgb(region) {
+    return parseHex(region.sky[2]);
+  }
+  // Sun position in screen space: low on the horizon, right of centre,
+  // where the amber glow and the sea glitter path both point.
+  const SUN_X = W * 0.72;
+  const SUN_Y = H * 0.60;
+
   // ---- sky ---------------------------------------------------------------
   function drawSky(region, storm, flash, time) {
     const g = ctx.createLinearGradient(0, 0, 0, H);
     g.addColorStop(0, region.sky[0]);
-    g.addColorStop(0.55, region.sky[1]);
-    g.addColorStop(0.78, region.sky[2]);
+    g.addColorStop(0.45, region.sky[1]);
+    g.addColorStop(0.68, region.sky[2]);
+    g.addColorStop(0.82, '#3a3a44');
     g.addColorStop(1, '#20242e');
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, W, H);
-    // Sun-break glow low on the horizon.
-    const sx = W * 0.72;
-    const sy = H * 0.62;
-    const rg = ctx.createRadialGradient(sx, sy, 10, sx, sy, 320);
-    rg.addColorStop(0, 'rgba(255, 196, 110, 0.55)');
-    rg.addColorStop(1, 'rgba(255, 196, 110, 0)');
+    // Sun disc + halo: a real sun, not just a glow.
+    const rg = ctx.createRadialGradient(SUN_X, SUN_Y, 6, SUN_X, SUN_Y, 340);
+    rg.addColorStop(0, 'rgba(255, 236, 180, 0.95)');
+    rg.addColorStop(0.08, 'rgba(255, 205, 120, 0.75)');
+    rg.addColorStop(0.35, 'rgba(255, 186, 100, 0.28)');
+    rg.addColorStop(1, 'rgba(255, 186, 100, 0)');
     ctx.fillStyle = rg;
     ctx.fillRect(0, 0, W, H);
-    // Drifting cloud bank silhouettes near the horizon.
-    ctx.fillStyle = 'rgba(16, 22, 36, 0.85)';
-    for (let i = 0; i < 6; i += 1) {
-      const bx = ((i * 397 + time * 6) % (W + 420)) - 210;
-      const by = H * 0.42 + (i % 3) * 26;
-      ctx.beginPath();
-      ctx.ellipse(bx, by, 190, 34, 0, 0, Math.PI * 2);
-      ctx.fill();
+    ctx.fillStyle = '#ffedbe';
+    ctx.beginPath();
+    ctx.arc(SUN_X, SUN_Y, 24, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(255, 240, 200, 0.85)';
+    ctx.beginPath();
+    ctx.arc(SUN_X, SUN_Y, 17, 0, Math.PI * 2);
+    ctx.fill();
+    // Distant haze band hugging the horizon.
+    const hz = ctx.createLinearGradient(0, H * 0.52, 0, H * 0.78);
+    hz.addColorStop(0, 'rgba(198, 164, 110, 0)');
+    hz.addColorStop(0.5, 'rgba(198, 164, 110, 0.20)');
+    hz.addColorStop(1, 'rgba(198, 164, 110, 0)');
+    ctx.fillStyle = hz;
+    ctx.fillRect(0, H * 0.52, W, H * 0.26);
+    // Drifting cloud bank near the horizon: shaded puff clusters with a
+    // lit top and a dark belly, not flat silhouettes.
+    for (let i = 0; i < 4; i += 1) {
+      const bx = ((i * 521 + time * 6) % (W + 560)) - 280;
+      const by = H * 0.40 + (i % 3) * 30;
+      const puffs = [
+        { dx: -70, dy: 6, rx: 120, ry: 26 },
+        { dx: 0, dy: -8, rx: 150, ry: 32 },
+        { dx: 80, dy: 8, rx: 110, ry: 24 },
+      ];
+      for (const p of puffs) {
+        const pg = ctx.createLinearGradient(0, by + p.dy - p.ry, 0, by + p.dy + p.ry);
+        pg.addColorStop(0, 'rgba(96, 104, 132, 0.85)');
+        pg.addColorStop(1, 'rgba(18, 24, 40, 0.9)');
+        ctx.fillStyle = pg;
+        ctx.beginPath();
+        ctx.ellipse(bx + p.dx, by + p.dy, p.rx, p.ry, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
     }
     if (flash > 0) {
-      ctx.fillStyle = `rgba(210, 225, 255, ${flash * 0.35})`;
+      ctx.fillStyle = `rgba(210, 225, 255, ${flash * 0.22})`;
       ctx.fillRect(0, 0, W, H);
     }
   }
 
   // ---- terrain mesh ------------------------------------------------------
-  function drawTerrain(terrain, cam, region) {
+  // `light` is the lightning lift (0..1): when a strike flashes, every
+  // facet brightens with it, so the flash reads as light on the world.
+  function drawTerrain(terrain, cam, region, light) {
     const project = terrain.makeProjector(cam, FOCAL, CX, CY);
     const fx = Math.sin(cam.yaw);
     const fz = Math.cos(cam.yaw);
@@ -69,6 +127,7 @@ export function createRenderer(canvas) {
     // Grid aligned to the focus point, not the world, so it follows the plane.
     const ox = focusX - half;
     const oz = focusZ - half;
+    const haze = hazeRgb(region);
     const quads = [];
     for (let j = 0; j < N; j += 1) {
       for (let i = 0; i < N; i += 1) {
@@ -84,7 +143,9 @@ export function createRenderer(canvas) {
         const cxm = (x0 + x1) / 2 - cam.x;
         const czm = (z0 + z1) / 2 - cam.z;
         const depth = cxm * cxm + czm * czm;
-        quads.push({ x0, z0, x1, z1, h00, h10, h01, h11, hm, depth });
+        // Slope across the cell, for cliff shading in the colour call.
+        const slope = Math.max(Math.abs(h10 - h00), Math.abs(h01 - h00), Math.abs(h11 - h10), Math.abs(h11 - h01)) / CELL;
+        quads.push({ x0, z0, x1, z1, h00, h10, h01, h11, hm, depth, slope });
       }
     }
     quads.sort((a, b) => b.depth - a.depth);
@@ -94,15 +155,14 @@ export function createRenderer(canvas) {
       const p11 = project(q.x1, Math.max(q.h11, 0), q.z1);
       const p01 = project(q.x0, Math.max(q.h01, 0), q.z1);
       if (!p00 || !p10 || !p11 || !p01) continue;
-      // Flat shade by height; water gets a wave pattern so the sea is not
-      // one flat sheet.
-      let col = terrain.colour(0, 0, q.hm);
-      if (q.hm <= 1.5) {
-        const wob = Math.sin(q.x0 * 0.021 + q.z0 * 0.017) * Math.sin(q.x0 * 0.008 - q.z0 * 0.011);
-        col = wob > 0.25 ? '#207a78' : wob < -0.25 ? '#1a6360' : col;
-      }
-      ctx.fillStyle = col;
-      ctx.globalAlpha = 0.92;
+      const dist = Math.sqrt(q.depth);
+      const fog = fogFactor(dist);
+      // Textured facet colour, fogged toward the horizon haze, then lit
+      // by the lightning lift (a cool-white lift, stronger on the flash).
+      let rgb = terrain.colour(q.x0, q.z0, q.hm, q.slope);
+      rgb = mix(rgb, haze, fog);
+      if (light > 0) rgb = lit(mix(rgb, [214, 226, 255], light * 0.25), 1 + light * 0.4);
+      ctx.fillStyle = css(rgb);
       ctx.beginPath();
       ctx.moveTo(p00.x, p00.y);
       ctx.lineTo(p10.x, p10.y);
@@ -110,13 +170,25 @@ export function createRenderer(canvas) {
       ctx.lineTo(p01.x, p01.y);
       ctx.closePath();
       ctx.fill();
+      // Sun glitter on the sea: sparse warm flecks on the sun side of
+      // the frame, fading out with the fog. No checkerboard, just light
+      // on moving water.
+      if (q.hm <= 1.5 && fog < 0.6) {
+        const sp = project((q.x0 + q.x1) / 2, 0, (q.z0 + q.z1) / 2);
+        if (sp && sp.x > CX + 40 && terrain.hashCell(q.x0, q.z0) > 0.90) {
+          ctx.fillStyle = `rgba(255, 214, 140, ${(1 - fog) * 0.55})`;
+          ctx.beginPath();
+          ctx.ellipse(sp.x, sp.y, 7 * sp.s * 0.4 + 2, 2.5, 0, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
     }
-    ctx.globalAlpha = 1;
     return project;
   }
 
   // ---- strips ------------------------------------------------------------
-  function drawStrip(terrain, project, strip) {
+  // `light` is the lightning lift; `haze` is the fog colour for distance.
+  function drawStrip(terrain, project, strip, light, haze) {
     const dx = Math.sin(strip.heading);
     const dz = Math.cos(strip.heading);
     const px = Math.cos(strip.heading);
@@ -131,14 +203,48 @@ export function createRenderer(canvas) {
     ];
     const pts = corners.map(([x, z]) => project(x, terrain.groundAt(x, z) + 1.5, z));
     if (pts.some((p) => !p)) return;
-    ctx.fillStyle = '#2b2f36';
+    const centre = project(strip.x, terrain.groundAt(strip.x, strip.z) + 1.5, strip.z);
+    const fog = centre ? fogFactor(centre.depth) : 0;
+    // Asphalt with noise speckle, fogged like the terrain around it.
+    let asphalt = mix([43, 47, 54], haze, fog);
+    if (light > 0) asphalt = lit(asphalt, 1 + light * 0.5);
+    ctx.fillStyle = css(asphalt);
     ctx.beginPath();
     ctx.moveTo(pts[0].x, pts[0].y);
     for (let i = 1; i < 4; i += 1) ctx.lineTo(pts[i].x, pts[i].y);
     ctx.closePath();
     ctx.fill();
+    // Asphalt speckle: short pale ticks scattered along the strip.
+    ctx.strokeStyle = `rgba(200, 205, 215, ${0.25 * (1 - fog)})`;
+    ctx.lineWidth = 1;
+    for (let t = -hl + 12; t < hl - 8; t += 26) {
+      const off = (terrain.hashCell(strip.x + t, strip.z) - 0.5) * hw * 1.4;
+      const a = project(strip.x + dx * t + px * off, terrain.groundAt(strip.x + dx * t, strip.z + dz * t) + 2, strip.z + dz * t + pz * off);
+      const b = project(strip.x + dx * (t + 9) + px * off, terrain.groundAt(strip.x + dx * (t + 9), strip.z + dz * (t + 9)) + 2, strip.z + dz * (t + 9) + pz * off);
+      if (!a || !b) continue;
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      ctx.stroke();
+    }
+    // Threshold bars at both ends: four white bars across the width.
+    ctx.fillStyle = `rgba(240, 242, 245, ${0.9 * (1 - fog)})`;
+    for (const end of [-1, 1]) {
+      for (const side of [-0.6, -0.2, 0.2, 0.6]) {
+        const t = end * (hl - 14);
+        const a = project(strip.x + dx * t + px * side * hw - dx * 8, terrain.groundAt(strip.x + dx * t, strip.z + dz * t) + 2, strip.z + dz * t + pz * side * hw - dz * 8);
+        const b = project(strip.x + dx * t + px * side * hw + dx * 8, terrain.groundAt(strip.x + dx * t, strip.z + dz * t) + 2, strip.z + dz * t + pz * side * hw + dz * 8);
+        if (!a || !b) continue;
+        ctx.strokeStyle = `rgba(240, 242, 245, ${0.9 * (1 - fog)})`;
+        ctx.lineWidth = 5;
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(b.x, b.y);
+        ctx.stroke();
+      }
+    }
     // Centreline dashes.
-    ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+    ctx.strokeStyle = `rgba(255,255,255,${0.85 * (1 - fog)})`;
     ctx.lineWidth = 2;
     for (let t = -hl + 30; t < hl - 10; t += 45) {
       const a = project(strip.x + dx * t, terrain.groundAt(strip.x + dx * t, strip.z + dz * t) + 2, strip.z + dz * t);
@@ -149,17 +255,35 @@ export function createRenderer(canvas) {
       ctx.lineTo(b.x, b.y);
       ctx.stroke();
     }
-    // Edge lights, amber.
+    // Approach light bar: white lights leading in before the threshold.
+    ctx.save();
+    ctx.shadowColor = '#fff';
+    ctx.shadowBlur = 8;
+    ctx.fillStyle = '#fff';
+    for (let k = 1; k <= 5; k += 1) {
+      const t = -hl - k * 28;
+      const p = project(strip.x + dx * t, terrain.groundAt(strip.x + dx * t, strip.z + dz * t) + 2, strip.z + dz * t);
+      if (!p) continue;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+    // Edge lights, amber, with glow halos.
+    ctx.save();
+    ctx.shadowColor = '#ffb347';
+    ctx.shadowBlur = 10;
     ctx.fillStyle = '#ffb347';
     for (const side of [-1, 1]) {
       for (let t = -hl; t <= hl; t += 60) {
         const p = project(strip.x + dx * t + px * side * hw, terrain.groundAt(strip.x + dx * t, strip.z + dz * t) + 2, strip.z + dz * t + pz * side * hw);
         if (!p) continue;
         ctx.beginPath();
-        ctx.arc(p.x, p.y, 2.5, 0, Math.PI * 2);
+        ctx.arc(p.x, p.y, 3, 0, Math.PI * 2);
         ctx.fill();
       }
     }
+    ctx.restore();
   }
 
   // ---- rings ---------------------------------------------------------------
@@ -173,8 +297,10 @@ export function createRenderer(canvas) {
     if (c.depth < 60) return;
     const radius = ring.r * c.s * 0.9;
     if (radius < 3 || radius > 420) return;
+    const fogA = 1 - fogFactor(c.depth) * 0.8;
     const pulse = done ? 0 : 0.5 + 0.5 * Math.sin(time * 5);
     ctx.save();
+    ctx.globalAlpha = fogA;
     ctx.translate(c.x, c.y);
     ctx.strokeStyle = done ? 'rgba(120, 220, 140, 0.9)' : `rgba(255, 179, 71, ${0.75 + 0.3 * pulse})`;
     ctx.lineWidth = done ? 5 : 8;
@@ -199,9 +325,14 @@ export function createRenderer(canvas) {
   }
 
   // ---- storm cells, rain, lightning ---------------------------------------
-  function drawClouds(project, weather, time) {
-    // Puffy clusters: several overlapping ellipses per cell so a storm
-    // cloud reads as a mass, not a flat disc.
+  function drawClouds(project, weather, time, light) {
+    // Storm cells as shaded puff clusters: every puff is a vertical
+    // gradient (lit top, dark belly) with an anvil cap, so a cloud reads
+    // as a lit volume instead of a flat disc. Far cells fade into fog,
+    // and a lightning flash lifts the lit tops together with the terrain.
+    const lift = light > 0 ? Math.round(light * 70) : 0;
+    const topBase = [125 + lift, 138 + lift, 168 + lift];
+    const bellyBase = [20 + lift, 26 + lift, 42 + lift];
     for (const cell of weather.cells) {
       const puffs = [
         { dx: -0.5, dy: 0.05, r: 0.42, a: 0.85, rot: -0.12 },
@@ -209,6 +340,8 @@ export function createRenderer(canvas) {
         { dx: 0.5, dy: 0.06, r: 0.44, a: 0.85, rot: 0.14 },
         { dx: -0.18, dy: 0.14, r: 0.36, a: 0.8, rot: -0.06 },
         { dx: 0.22, dy: 0.15, r: 0.38, a: 0.8, rot: 0.1 },
+        // Anvil cap: wide, flat, catching the sun on top.
+        { dx: 0, dy: -0.22, r: 0.62, a: 0.55, rot: 0, anvil: true },
       ];
       for (const puff of puffs) {
         const p = project(
@@ -219,13 +352,14 @@ export function createRenderer(canvas) {
         if (!p || p.depth < 30) continue;
         const rx = cell.r * puff.r * p.s * 0.8;
         if (rx < 4) continue;
-        ctx.fillStyle = `rgba(22, 28, 44, ${puff.a})`;
+        const ry = puff.anvil ? rx * 0.22 : rx * 0.52;
+        const fogA = 1 - fogFactor(p.depth) * 0.75;
+        const pg = ctx.createLinearGradient(0, p.y - ry, 0, p.y + ry);
+        pg.addColorStop(0, css(mix(topBase, [255, 220, 160], puff.anvil ? 0.35 : 0), puff.a * fogA));
+        pg.addColorStop(1, css(bellyBase, puff.a * fogA));
+        ctx.fillStyle = pg;
         ctx.beginPath();
-        ctx.ellipse(p.x, p.y, rx, rx * 0.52, puff.rot, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.fillStyle = 'rgba(58, 68, 92, 0.5)';
-        ctx.beginPath();
-        ctx.ellipse(p.x, p.y - rx * 0.16, rx * 0.62, rx * 0.3, puff.rot, 0, Math.PI * 2);
+        ctx.ellipse(p.x, p.y, rx, ry, puff.rot, 0, Math.PI * 2);
         ctx.fill();
       }
     }
@@ -233,41 +367,90 @@ export function createRenderer(canvas) {
 
   function drawLightning(project, bolt) {
     if (!bolt) return;
+    const pts = bolt.points.map((pt) => project(pt.x, pt.y, pt.z)).filter(Boolean);
+    if (pts.length < 2) return;
+    // Glow at the strike's cloud top, so the bolt has a source of light.
+    const top = pts[0];
+    const gg = ctx.createRadialGradient(top.x, top.y, 4, top.x, top.y, 190);
+    gg.addColorStop(0, 'rgba(220, 232, 255, 0.55)');
+    gg.addColorStop(1, 'rgba(220, 232, 255, 0)');
+    ctx.fillStyle = gg;
+    ctx.fillRect(0, 0, W, H);
     ctx.save();
     ctx.strokeStyle = '#f5f7ff';
     ctx.lineWidth = 4;
     ctx.shadowColor = '#cfe0ff';
     ctx.shadowBlur = 22;
     ctx.beginPath();
-    let started = false;
-    for (const pt of bolt.points) {
-      const p = project(pt.x, pt.y, pt.z);
-      if (!p) continue;
-      if (!started) { ctx.moveTo(p.x, p.y); started = true; }
-      else ctx.lineTo(p.x, p.y);
-    }
+    ctx.moveTo(pts[0].x, pts[0].y);
+    for (let i = 1; i < pts.length; i += 1) ctx.lineTo(pts[i].x, pts[i].y);
+    ctx.stroke();
+    // A thinner branch splitting off mid-bolt, for a real strike shape.
+    const mid = pts[Math.floor(pts.length / 2)];
+    const end = pts[pts.length - 1];
+    ctx.lineWidth = 2;
+    ctx.shadowBlur = 12;
+    ctx.beginPath();
+    ctx.moveTo(mid.x, mid.y);
+    ctx.lineTo(mid.x + (end.x - mid.x) * 0.4 + 46, mid.y + (end.y - mid.y) * 0.4 + 30);
+    ctx.lineTo(mid.x + (end.x - mid.x) * 0.7 + 70, mid.y + (end.y - mid.y) * 0.7 + 64);
     ctx.stroke();
     ctx.restore();
   }
 
-  function drawRain(storm, time) {
+  function drawRain(storm, time, plane) {
     if (storm < 0.15) return;
+    // Two depths: far rain faint, short and slow; near rain bright, long
+    // and fast, slanting with the bank so it feels like the plane's own
+    // airspeed. The two layers together give the rain depth.
     ctx.save();
-    ctx.strokeStyle = `rgba(180, 200, 230, ${0.25 + 0.45 * storm})`;
-    ctx.lineWidth = 1.5;
-    for (let i = 0; i < 130; i += 1) {
-      const seed = i * 137.5;
-      const x = ((seed + time * 900) % (W + 80)) - 40;
-      const y = ((seed * 1.7 + time * 1400) % (H + 60)) - 30;
+    const slant = plane ? plane.bank * 30 : 0;
+    ctx.strokeStyle = `rgba(170, 195, 230, ${0.10 + 0.20 * storm})`;
+    ctx.lineWidth = 1;
+    for (let i = 0; i < 70; i += 1) {
+      const seed = i * 211.3;
+      const x = ((seed + time * 420) % (W + 80)) - 40;
+      const y = ((seed * 1.7 + time * 700) % (H + 60)) - 30;
       ctx.beginPath();
       ctx.moveTo(x, y);
-      ctx.lineTo(x - 9, y + 26);
+      ctx.lineTo(x - 4 + slant * 0.4, y + 13);
       ctx.stroke();
+    }
+    ctx.strokeStyle = `rgba(190, 208, 235, ${0.42 + 0.38 * storm})`;
+    ctx.lineWidth = 1.5;
+    for (let i = 0; i < 60; i += 1) {
+      const seed = i * 137.5 + 50;
+      const x = ((seed + time * 1100) % (W + 80)) - 40;
+      const y = ((seed * 1.7 + time * 1700) % (H + 60)) - 30;
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.lineTo(x - 13 + slant, y + 38);
+      ctx.stroke();
+    }
+    // Splash rings on the sea when skimming low through rain.
+    if (plane && plane.y < 45) {
+      ctx.strokeStyle = `rgba(200, 220, 240, ${0.35 * storm})`;
+      ctx.lineWidth = 1.5;
+      for (let i = 0; i < 9; i += 1) {
+        const seed = i * 173.1;
+        const cx = ((seed + time * 60) % (W + 100)) - 50;
+        const cy = H * 0.78 + ((seed * 0.37) % (H * 0.16));
+        const r = 4 + ((time * 46 + i * 13) % 26);
+        ctx.globalAlpha = (0.5 - r / 60) * storm;
+        ctx.beginPath();
+        ctx.ellipse(cx, cy, r, r * 0.32, 0, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
     }
     ctx.restore();
   }
 
   // ---- the plane: drawn big, built from parts ------------------------------
+  // Pitch is VISIBLE now: nose-up foreshortens the fuselage (the chase
+  // camera sees more of the tail, less of the nose) and nose-down
+  // stretches it, on top of the sprite riding up/down. The old build only
+  // rolled, so pitch never read in a still frame.
   function drawPlane(plane, screenPos, time) {
     const S = 300; // sprite width in px
     const bank = plane.bank;
@@ -276,9 +459,11 @@ export function createRenderer(canvas) {
     ctx.save();
     ctx.translate(px, py);
     ctx.rotate(bank * 0.9);
-    ctx.scale(1, 1 - Math.abs(plane.pitch) * 0.12);
+    const pitchSq = Math.max(0.62, Math.min(1.4, 1 - plane.pitch * 0.5));
+    ctx.scale(1, pitchSq);
     const u = S / 300;
-    // Prop blur disc at the nose (top).
+    // Prop blur disc at the nose (top): translucent disc, rim ring, and
+    // faint spokes turning with time so the prop reads as spinning.
     ctx.fillStyle = 'rgba(220, 228, 240, 0.28)';
     ctx.beginPath();
     ctx.ellipse(0, -118 * u, 34 * u, 46 * u, 0, 0, Math.PI * 2);
@@ -288,15 +473,33 @@ export function createRenderer(canvas) {
     ctx.beginPath();
     ctx.ellipse(0, -118 * u, 26 * u, 38 * u, 0, 0, Math.PI * 2);
     ctx.stroke();
-    // Tail: horizontal stabiliser + fin.
+    ctx.strokeStyle = 'rgba(240,244,250,0.28)';
+    ctx.lineWidth = 3;
+    const spoke = time * 9;
+    for (let k = 0; k < 3; k += 1) {
+      const a = spoke + (k * Math.PI) / 3;
+      ctx.beginPath();
+      ctx.moveTo(Math.cos(a) * 8 * u, -118 * u + Math.sin(a) * 10 * u);
+      ctx.lineTo(Math.cos(a) * 30 * u, -118 * u + Math.sin(a) * 42 * u);
+      ctx.stroke();
+    }
+    // Tail: horizontal stabiliser (its trailing edge lifts with pitch,
+    // like an elevator) + fin with an amber flash.
+    const elev = -plane.pitch * 14 * u;
     ctx.fillStyle = '#3d4a63';
     ctx.beginPath();
-    ctx.moveTo(-58 * u, 78 * u);
-    ctx.lineTo(58 * u, 78 * u);
+    ctx.moveTo(-58 * u, 78 * u + elev);
+    ctx.lineTo(58 * u, 78 * u + elev);
     ctx.lineTo(44 * u, 96 * u);
     ctx.lineTo(-44 * u, 96 * u);
     ctx.closePath();
     ctx.fill();
+    ctx.strokeStyle = 'rgba(30, 40, 60, 0.6)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(-52 * u, 84 * u + elev);
+    ctx.lineTo(52 * u, 84 * u + elev);
+    ctx.stroke();
     ctx.fillStyle = '#46557a';
     ctx.beginPath();
     ctx.moveTo(-8 * u, 62 * u);
@@ -305,7 +508,15 @@ export function createRenderer(canvas) {
     ctx.lineTo(-14 * u, 104 * u);
     ctx.closePath();
     ctx.fill();
-    // Main wings with dihedral.
+    ctx.fillStyle = '#ffb347';
+    ctx.beginPath();
+    ctx.moveTo(-8 * u, 66 * u);
+    ctx.lineTo(10 * u, 66 * u);
+    ctx.lineTo(12 * u, 78 * u);
+    ctx.lineTo(-10 * u, 78 * u);
+    ctx.closePath();
+    ctx.fill();
+    // Main wings with dihedral, flap lines and aileron seams.
     ctx.fillStyle = '#5a6b8c';
     ctx.beginPath();
     ctx.moveTo(-26 * u, -18 * u);
@@ -336,6 +547,18 @@ export function createRenderer(canvas) {
     ctx.lineTo(24 * u, -10 * u);
     ctx.closePath();
     ctx.fill();
+    ctx.strokeStyle = 'rgba(40, 50, 70, 0.55)';
+    ctx.lineWidth = 1;
+    for (const side of [-1, 1]) {
+      ctx.beginPath();
+      ctx.moveTo(side * 30 * u, -14 * u);
+      ctx.lineTo(side * 142 * u, 28 * u);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(side * 34 * u, -4 * u);
+      ctx.lineTo(side * 138 * u, 36 * u);
+      ctx.stroke();
+    }
     // Fuselage: tapered body, panel shading, amber storm-chaser stripe.
     const body = ctx.createLinearGradient(-20 * u, 0, 20 * u, 0);
     body.addColorStop(0, '#7c8aa8');
@@ -359,7 +582,8 @@ export function createRenderer(canvas) {
     ctx.lineTo(-9 * u, 60 * u);
     ctx.closePath();
     ctx.fill();
-    // Rivet / panel lines.
+    // Panel lines across the fuselage, longerons down each side, and
+    // rivet dots along them: the skin reads as riveted metal, not paint.
     ctx.strokeStyle = 'rgba(40, 50, 70, 0.55)';
     ctx.lineWidth = 1;
     for (const yy of [-60, -20, 20, 60]) {
@@ -368,11 +592,38 @@ export function createRenderer(canvas) {
       ctx.lineTo(20 * u, yy * u);
       ctx.stroke();
     }
-    // Canopy with glint.
-    ctx.fillStyle = '#1d2f4d';
+    ctx.strokeStyle = 'rgba(40, 50, 70, 0.4)';
+    for (const side of [-1, 1]) {
+      ctx.beginPath();
+      ctx.moveTo(side * 15 * u, -100 * u);
+      ctx.quadraticCurveTo(side * 19 * u, -30 * u, side * 17 * u, 40 * u);
+      ctx.quadraticCurveTo(side * 16 * u, 70 * u, side * 10 * u, 92 * u);
+      ctx.stroke();
+    }
+    ctx.fillStyle = 'rgba(30, 40, 60, 0.7)';
+    for (const yy of [-60, -20, 20, 60]) {
+      for (const xx of [-14, -7, 7, 14]) {
+        ctx.beginPath();
+        ctx.arc(xx * u, yy * u, 1.1 * u, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    // Canopy with a sky reflection: pale blue at the top fading to deep
+    // navy, plus a diagonal glint streak.
+    const canopy = ctx.createLinearGradient(0, -84 * u, 0, -32 * u);
+    canopy.addColorStop(0, '#9db8dd');
+    canopy.addColorStop(0.45, '#4a6a94');
+    canopy.addColorStop(1, '#16233c');
+    ctx.fillStyle = canopy;
     ctx.beginPath();
     ctx.ellipse(0, -58 * u, 13 * u, 26 * u, 0, 0, Math.PI * 2);
     ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.moveTo(-6 * u, -72 * u);
+    ctx.lineTo(2 * u, -48 * u);
+    ctx.stroke();
     ctx.fillStyle = 'rgba(255,255,255,0.75)';
     ctx.beginPath();
     ctx.ellipse(-4 * u, -66 * u, 4 * u, 10 * u, -0.3, 0, Math.PI * 2);
@@ -387,20 +638,26 @@ export function createRenderer(canvas) {
     ctx.beginPath();
     ctx.ellipse(0, -124 * u, 9 * u, 10 * u, 0, 0, Math.PI * 2);
     ctx.fill();
-    // Navigation lights.
+    // Navigation lights with glow halos.
     const blink = 0.5 + 0.5 * Math.sin(time * 6);
+    ctx.save();
+    ctx.shadowBlur = 14;
+    ctx.shadowColor = '#ff3c3c';
     ctx.fillStyle = `rgba(255, 60, 60, ${0.6 + 0.4 * blink})`;
     ctx.beginPath();
     ctx.arc(-146 * u, 34 * u, 5 * u, 0, Math.PI * 2);
     ctx.fill();
+    ctx.shadowColor = '#50ff78';
     ctx.fillStyle = `rgba(80, 255, 120, ${0.6 + 0.4 * blink})`;
     ctx.beginPath();
     ctx.arc(146 * u, 34 * u, 5 * u, 0, Math.PI * 2);
     ctx.fill();
+    ctx.shadowColor = '#fff';
     ctx.fillStyle = '#fff';
     ctx.beginPath();
     ctx.arc(0, 102 * u, 4 * u, 0, Math.PI * 2);
     ctx.fill();
+    ctx.restore();
     // Landing gear when down.
     if (plane.gearDown) {
       ctx.fillStyle = '#1c2434';
@@ -739,7 +996,10 @@ export function createRenderer(canvas) {
     if (shake > 0) shake *= 0.86;
     ctx.save();
     ctx.translate(jx, jy);
-    drawSky(region, storm, weather.flash, time);
+    // Lightning light: a live strike's flash, or the staged flash the
+    // screenshot staging sets so the cover bolt lights its own scene.
+    const flash = Math.max(weather.flash, world.forcedFlash || 0);
+    drawSky(region, storm, flash, time);
     // Chase camera: behind and above the plane, looking forward.
     const fx = Math.sin(plane.heading);
     const fz = Math.cos(plane.heading);
@@ -751,9 +1011,9 @@ export function createRenderer(canvas) {
       pitch: -0.10 - plane.pitch * 0.35,
       roll: plane.bank * 0.35,
     };
-    const project = drawTerrain(terrain, cam, region);
-    drawClouds(project, weather, time);
-    drawStrip(terrain, project, region.strip);
+    const project = drawTerrain(terrain, cam, region, flash);
+    drawClouds(project, weather, time, flash);
+    drawStrip(terrain, project, region.strip, flash, hazeRgb(region));
     if (mission) {
       for (const ring of mission.rings) drawRing(project, ring, ring.done, time);
       const activeDrop = (mission.drops || []).find((d) => !d.done);
@@ -785,9 +1045,21 @@ export function createRenderer(canvas) {
         // Cap the drawn radius: a zone close to the camera must not fill
         // the frame, and its label goes below the circle so it cannot be
         // cut off at the top of the screen.
-        const radius = Math.min(drop.r * p.s * 0.9, 130);
+        // HUD fix: the circle must never touch the FUEL/DMG panel
+        // (bottom-left, 18,H-92,250x76). Shrink it so its bottom edge
+        // clears the panel top, and clip the stroke out of the panel
+        // rect as well, so no arc ever paints across the instruments.
+        let radius = Math.min(drop.r * p.s * 0.9, 130);
+        const panelTop = H - 92;
+        if (p.y + radius > panelTop - 10 && p.x - radius < 280) {
+          radius = Math.max(24, panelTop - 10 - p.y);
+        }
         if (radius < 4) continue;
         ctx.save();
+        ctx.beginPath();
+        ctx.rect(0, 0, W, H);
+        ctx.rect(12, panelTop - 6, 262, 88);
+        ctx.clip('evenodd');
         ctx.translate(p.x, p.y);
         ctx.strokeStyle = 'rgba(120, 220, 140, 0.95)';
         ctx.lineWidth = 3;
@@ -809,11 +1081,28 @@ export function createRenderer(canvas) {
         ctx.restore();
       }
     }
-    drawLightning(project, weather.bolt || world.forcedBolt);
+    const bolt = weather.bolt || world.forcedBolt;
+    drawLightning(project, bolt);
     // The plane sits fixed on screen, large centre-low, like a chase
     // camera locked to the airframe; the world moves around it.
     drawPlane(plane, { x: CX, y: H * 0.66 }, time);
-    drawRain(storm, time);
+    drawRain(storm, time, plane);
+    // Lightning light, second half: a radial wash centred on the bolt
+    // plus a faint whole-frame lift, drawn over the world (terrain,
+    // clouds, plane) but under the HUD, so the strike lights the scene
+    // instead of sitting on top of it as a white line.
+    if (flash > 0 && bolt) {
+      const bp = project(bolt.points[0].x, bolt.points[0].y, bolt.points[0].z);
+      if (bp) {
+        const fg = ctx.createRadialGradient(bp.x, bp.y, 20, bp.x, bp.y, 520);
+        fg.addColorStop(0, `rgba(214, 228, 255, ${flash * 0.42})`);
+        fg.addColorStop(1, 'rgba(214, 228, 255, 0)');
+        ctx.fillStyle = fg;
+        ctx.fillRect(0, 0, W, H);
+      }
+      ctx.fillStyle = `rgba(214, 228, 255, ${flash * 0.10})`;
+      ctx.fillRect(0, 0, W, H);
+    }
     ctx.restore();
     drawHUD(plane, mission, world.target, time);
     if (world.banner) {
