@@ -737,9 +737,11 @@ export function createRenderer(canvas) {
         ctx.fillText(`NEXT TARGET ${dist} m`, CX, 60);
       }
     }
-    // Bottom-left: fuel + damage.
+    // Bottom-left: fuel + damage. Solid fill, not translucent: the
+    // panel sits over the world, and a translucent fill lets bright
+    // world marks (strip lights) ghost through onto the instruments.
     ctx.textAlign = 'left';
-    ctx.fillStyle = 'rgba(8, 12, 22, 0.72)';
+    ctx.fillStyle = 'rgb(8, 12, 22)';
     ctx.fillRect(18, H - 92, 250, 76);
     ctx.strokeStyle = 'rgba(255, 179, 71, 0.9)';
     ctx.strokeRect(18, H - 92, 250, 76);
@@ -1033,6 +1035,9 @@ export function createRenderer(canvas) {
         // still to come are small dots, so the player sees where they are
         // without the clutter.
         if (drop !== activeDrop) {
+          // A dot landing on the FUEL/DMG panel would paint over the
+          // instruments: skip it, same as the active circle's clip.
+          if (p.x > 12 && p.x < 274 && p.y > H - 98 && p.y < H - 10) continue;
           ctx.save();
           ctx.translate(p.x, p.y);
           ctx.fillStyle = 'rgba(120, 220, 140, 0.9)';
@@ -1046,14 +1051,12 @@ export function createRenderer(canvas) {
         // the frame, and its label goes below the circle so it cannot be
         // cut off at the top of the screen.
         // HUD fix: the circle must never touch the FUEL/DMG panel
-        // (bottom-left, 18,H-92,250x76). Shrink it so its bottom edge
-        // clears the panel top, and clip the stroke out of the panel
-        // rect as well, so no arc ever paints across the instruments.
+        // (bottom-left, 18,H-92,250x76). No shrink — the evenodd clip
+        // below already cuts the arc out of the panel rect, so the zone
+        // stays big and readable and the panel simply sits in front of
+        // it. (A shrink rule here crushed the circle to ~33 px in v2.)
         let radius = Math.min(drop.r * p.s * 0.9, 130);
         const panelTop = H - 92;
-        if (p.y + radius > panelTop - 10 && p.x - radius < 280) {
-          radius = Math.max(24, panelTop - 10 - p.y);
-        }
         if (radius < 4) continue;
         ctx.save();
         ctx.beginPath();
