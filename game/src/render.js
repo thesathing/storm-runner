@@ -49,9 +49,11 @@ export function createRenderer(canvas) {
     return parseHex(region.sky[2]);
   }
   // Sun position in screen space: low on the horizon, right of centre,
-  // where the amber glow and the sea glitter path both point.
+  // where the amber glow and the sea glitter path both point. Low and
+  // warm, like the reference's sunset: the light rakes across the
+  // water instead of sitting high in the sky.
   const SUN_X = W * 0.72;
-  const SUN_Y = H * 0.60;
+  const SUN_Y = H * 0.66;
 
   // ---- sky ---------------------------------------------------------------
   // A soft-edged puff: a radial gradient that fades to transparent at
@@ -84,9 +86,9 @@ export function createRenderer(canvas) {
     // Warm wash around the sun so the sky is amber near the sun and
     // cooler away from it, not one flat band.
     const warm = ctx.createRadialGradient(SUN_X, SUN_Y, 10, SUN_X, SUN_Y, 560);
-    warm.addColorStop(0, 'rgba(255, 206, 130, 0.55)');
-    warm.addColorStop(0.45, 'rgba(255, 186, 110, 0.22)');
-    warm.addColorStop(1, 'rgba(255, 186, 110, 0)');
+    warm.addColorStop(0, 'rgba(255, 198, 110, 0.68)');
+    warm.addColorStop(0.45, 'rgba(255, 176, 92, 0.28)');
+    warm.addColorStop(1, 'rgba(255, 176, 92, 0)');
     ctx.fillStyle = warm;
     ctx.fillRect(0, 0, W, H);
     // Sun disc + halo: a real sun, not just a glow.
@@ -126,15 +128,17 @@ export function createRenderer(canvas) {
     hz.addColorStop(1, 'rgba(198, 164, 110, 0)');
     ctx.fillStyle = hz;
     ctx.fillRect(0, H * 0.52, W, H * 0.26);
-    // Distant cloud deck fading into the haze: very faint wide puffs
-    // across the horizon, so the sky never ends in a hard line.
-    for (let i = 0; i < 6; i += 1) {
+    // Distant cloud deck fading into the haze: faint wide puffs
+    // across the horizon, some dark and broken so the deck reads as
+    // storm cloud with bright breaks, not one flat band.
+    for (let i = 0; i < 8; i += 1) {
       const bx = ((i * 331 + time * 4) % (W + 600)) - 300;
-      softBlob(bx, H * 0.56, 260, 26, [150, 158, 178], 0.16);
+      const dark = i % 3 === 0;
+      softBlob(bx, H * 0.56, 260, 26, dark ? [58, 64, 84] : [150, 158, 178], dark ? 0.22 : 0.16);
     }
     // Drifting cloud bank near the horizon: soft-edged shaded puffs
     // with a lit top and a dark belly, never a visible ellipse outline.
-    for (let i = 0; i < 4; i += 1) {
+    for (let i = 0; i < 5; i += 1) {
       const bx = ((i * 521 + time * 6) % (W + 560)) - 280;
       const by = H * 0.40 + (i % 3) * 30;
       // Two extra satellite puffs riding higher break the flat
@@ -147,7 +151,7 @@ export function createRenderer(canvas) {
         { dx: 45, dy: -22, rx: 80, ry: 20 },
       ];
       for (const p of puffs) {
-        softBlob(bx + p.dx, by + p.dy + p.ry * 0.3, p.rx, p.ry, [16, 22, 38], 0.85);
+        softBlob(bx + p.dx, by + p.dy + p.ry * 0.3, p.rx, p.ry, [10, 14, 26], 0.88);
         softBlob(bx + p.dx, by + p.dy - p.ry * 0.3, p.rx * 0.72, p.ry * 0.6, [110, 120, 148], 0.8);
       }
     }
@@ -322,6 +326,152 @@ export function createRenderer(canvas) {
       ctx.stroke();
     }
     ctx.restore();
+  }
+
+  // ---- coastal settlements ---------------------------------------------
+  // Real 3-D boxes in the world: each building is a roof quad plus the
+  // two walls facing the camera (chosen by the dot product of the wall
+  // normal with the direction to the camera), shaded by the sun, far
+  // buildings first so near ones overlap correctly. Roads are dark
+  // strips through each town; a town with a sea direction also gets
+  // piers reaching into the water and a few boats.
+  function drawTown(project, terrain, cam, light, haze) {
+    const fx = Math.sin(cam.yaw);
+    const fz = Math.cos(cam.yaw);
+    const toCamX = -fx;
+    const toCamZ = -fz;
+    const quadFill = (pts, rgb, fog) => {
+      let col = mix(rgb, haze, fog);
+      if (light > 0) col = lit(col, 1 + light * 0.4);
+      ctx.fillStyle = css(col);
+      ctx.beginPath();
+      ctx.moveTo(pts[0].x, pts[0].y);
+      for (let i = 1; i < pts.length; i += 1) ctx.lineTo(pts[i].x, pts[i].y);
+      ctx.closePath();
+      ctx.fill();
+    };
+    // Roads first, so buildings sit on top of them. Roads follow the
+    // town's frame (the strip town's frame is the strip's, so a road
+    // never crosses the runway).
+    for (const town of terrain.towns) {
+      const c = project(town.x, terrain.groundAt(town.x, town.z), town.z);
+      if (!c || c.depth > 2600) continue;
+      const rfx = town.rot ? town.rot.fx : 1;
+      const rfz = town.rot ? town.rot.fz : 0;
+      const rpx = town.rot ? town.rot.px : 0;
+      const rpz = town.rot ? town.rot.pz : 1;
+      for (const [dx, dz, len, wid] of [[rfx, rfz, 300, 9], [rpx, rpz, 200, 9]]) {
+        const qx = -dz;
+        const qz = dx;
+        const corner = (sa, sw) => {
+          const x = town.x + dx * sa + qx * sw;
+          const z = town.z + dz * sa + qz * sw;
+          return project(x, terrain.groundAt(x, z) + 0.4, z);
+        };
+        const pts = [corner(-len / 2, -wid / 2), corner(len / 2, -wid / 2), corner(len / 2, wid / 2), corner(-len / 2, wid / 2)];
+        if (pts.some((p) => !p)) continue;
+        quadFill(pts, [52, 54, 60], fogFactor(c.depth));
+      }
+      // Piers and boats for a coastal town.
+      if (town.seaDir) {
+        const [sx, sz] = town.seaDir;
+        const px = -sz;
+        const pz = sx;
+        for (const off of [-40, 30]) {
+          const ax = town.x + sx * 60 + px * off;
+          const az = town.z + sz * 60 + pz * off;
+          const bx = ax + sx * 70;
+          const bz = az + sz * 70;
+          const pts = [
+            project(ax - px * 3, 0.6, az - pz * 3),
+            project(ax + px * 3, 0.6, az + pz * 3),
+            project(bx + px * 3, 0.6, bz + pz * 3),
+            project(bx - px * 3, 0.6, bz - pz * 3),
+          ];
+          if (pts.some((p) => !p)) continue;
+          quadFill(pts, [110, 88, 62], fogFactor(c.depth));
+          // A boat moored at the pier end: white hull quad + mast.
+          const hx = bx + sx * 12;
+          const hz = bz + sz * 12;
+          const hp = project(hx, 0.5, hz);
+          if (hp && hp.depth > 30) {
+            const hw = 4 * hp.s + 2;
+            ctx.fillStyle = `rgba(235, 238, 242, ${0.9 * (1 - fogFactor(hp.depth))})`;
+            ctx.beginPath();
+            ctx.ellipse(hp.x, hp.y, hw, hw * 0.4, 0, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+      }
+    }
+    const items = [];
+    for (const town of terrain.towns) for (const b of town.buildings) items.push(b);
+    items.sort((a, b) => {
+      const da = (a.x - cam.x) ** 2 + (a.z - cam.z) ** 2;
+      const db = (b.x - cam.x) ** 2 + (b.z - cam.z) ** 2;
+      return db - da;
+    });
+    for (const b of items) {
+      const w = b.swap ? b.d : b.w;
+      const d = b.swap ? b.w : b.d;
+      const hw = w / 2;
+      const hd = d / 2;
+      // Base sunk to the lowest corner's ground, so a building on a
+      // slope sits IN the ground instead of floating above it.
+      const gy = Math.min(
+        terrain.groundAt(b.x - hw, b.z - hd),
+        terrain.groundAt(b.x + hw, b.z - hd),
+        terrain.groundAt(b.x + hw, b.z + hd),
+        terrain.groundAt(b.x - hw, b.z + hd),
+      ) - 1;
+      if (gy <= 0.5) continue; // a building in the sea is a mistake
+      const top = gy + b.h;
+      const c = project(b.x, gy, b.z);
+      if (!c || c.depth < 30 || c.depth > 2600) continue;
+      if (c.x < -120 || c.x > W + 120 || c.y < -120 || c.y > H + 120) continue;
+      const fog = fogFactor(c.depth);
+      const P = (x, y, z) => project(x, y, z);
+      const corners = {
+        b0: P(b.x - hw, gy, b.z - hd), b1: P(b.x + hw, gy, b.z - hd),
+        b2: P(b.x + hw, gy, b.z + hd), b3: P(b.x - hw, gy, b.z + hd),
+        t0: P(b.x - hw, top, b.z - hd), t1: P(b.x + hw, top, b.z - hd),
+        t2: P(b.x + hw, top, b.z + hd), t3: P(b.x - hw, top, b.z + hd),
+      };
+      if (Object.values(corners).some((p) => !p)) continue;
+      const walls = [
+        { n: [0, -1], pts: [corners.b0, corners.b1, corners.t1, corners.t0], sun: 0.82 },
+        { n: [1, 0], pts: [corners.b1, corners.b2, corners.t2, corners.t1], sun: 1.12 },
+        { n: [0, 1], pts: [corners.b2, corners.b3, corners.t3, corners.t2], sun: 0.95 },
+        { n: [-1, 0], pts: [corners.b3, corners.b0, corners.t0, corners.t3], sun: 0.78 },
+      ];
+      for (const wall of walls) {
+        const dot = wall.n[0] * toCamX + wall.n[1] * toCamZ;
+        if (dot <= 0.05) continue;
+        // Mid-tone walls with a per-building shade: near-white cream
+        // read as floating paper boxes at this scale.
+        const s = wall.sun * (b.shade || 0.8);
+        quadFill(wall.pts, [168 * s, 158 * s, 138 * s], fog);
+      }
+      // Roof with a slight overhang and a dark outline, so it reads as
+      // a roof from a shallow chase angle instead of a thin sliver.
+      const oh = 1.5;
+      const rc = {
+        t0: P(b.x - hw - oh, top, b.z - hd - oh), t1: P(b.x + hw + oh, top, b.z - hd - oh),
+        t2: P(b.x + hw + oh, top, b.z + hd + oh), t3: P(b.x - hw - oh, top, b.z + hd + oh),
+      };
+      if (!Object.values(rc).some((p) => !p)) {
+        quadFill([rc.t0, rc.t1, rc.t2, rc.t3], b.roof, fog);
+        ctx.strokeStyle = 'rgba(20, 26, 40, 0.7)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(rc.t0.x, rc.t0.y);
+        ctx.lineTo(rc.t1.x, rc.t1.y);
+        ctx.lineTo(rc.t2.x, rc.t2.y);
+        ctx.lineTo(rc.t3.x, rc.t3.y);
+        ctx.closePath();
+        ctx.stroke();
+      }
+    }
   }
 
   // ---- strips ------------------------------------------------------------
@@ -504,7 +654,7 @@ export function createRenderer(canvas) {
     // rain shafts down to the sea.
     const lift = light > 0 ? Math.round(light * 70) : 0;
     const topBase = [132 + lift, 145 + lift, 175 + lift];
-    const bellyBase = [22 + lift, 28 + lift, 46 + lift];
+    const bellyBase = [14 + lift, 18 + lift, 32 + lift];
     for (const cell of weather.cells) {
       const puffs = [
         { dx: -0.5, dy: 0.05, r: 0.42, a: 0.85 },
@@ -563,9 +713,11 @@ export function createRenderer(canvas) {
     const pts = bolt.points.map((pt) => project(pt.x, pt.y, pt.z)).filter(Boolean);
     if (pts.length < 2) return;
     // Glow at the strike's cloud top, so the bolt has a source of light.
+    // Kept tight: a wide bright bloom washed out the whole top of the
+    // frame in the cover shot.
     const top = pts[0];
-    const gg = ctx.createRadialGradient(top.x, top.y, 4, top.x, top.y, 190);
-    gg.addColorStop(0, 'rgba(220, 232, 255, 0.55)');
+    const gg = ctx.createRadialGradient(top.x, top.y, 4, top.x, top.y, 130);
+    gg.addColorStop(0, 'rgba(220, 232, 255, 0.4)');
     gg.addColorStop(1, 'rgba(220, 232, 255, 0)');
     ctx.fillStyle = gg;
     ctx.fillRect(0, 0, W, H);
@@ -668,11 +820,12 @@ export function createRenderer(canvas) {
   // horizon the other way, so a bank reads as a roll, not a spinning
   // cardboard cutout.
   function drawPlane(plane, screenPos, time) {
-    // Big in frame (criterion 2): 1.7x the v3 toy size. The chase 3/4
-    // perspective is unchanged — fuselage receding into the screen,
-    // never a vertical dart — and at this size the detail (canopy,
-    // panels, rivets, fin, prop blur, nav lights) finally reads.
-    const S = 510; // sprite width in px
+    // Big in frame (criterion 2, and the reference's jet filling the
+    // lower centre): 2x the v3 toy size. The chase 3/4 perspective is
+    // unchanged — fuselage receding into the screen, never a vertical
+    // dart — and at this size the detail (canopy, panels, rivets,
+    // fin, prop blur, nav lights) finally reads.
+    const S = 600; // sprite width in px
     const bank = plane.bank;
     const px = screenPos.x;
     const py = screenPos.y - plane.pitch * 60;
@@ -765,6 +918,24 @@ export function createRenderer(canvas) {
         ctx.beginPath();
         ctx.moveTo(side * 148 * L * u, 8 * u);
         ctx.quadraticCurveTo(side * 168 * L * u, 30 * u, side * 158 * L * u, 58 * u);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+    // Wingtip contrails at speed: long faint white trails streaming
+    // back off the tips, the reference's speed cue. On above 55
+    // (speed units) so a fast still frame always implies motion.
+    if (plane.speed > 55) {
+      const cf = Math.min(1, (plane.speed - 55) / 40);
+      ctx.save();
+      ctx.strokeStyle = `rgba(235, 242, 252, ${0.14 * cf})`;
+      ctx.lineWidth = 5 * u;
+      ctx.lineCap = 'round';
+      for (const side of [-1, 1]) {
+        const L = side < 0 ? leftL : rightL;
+        ctx.beginPath();
+        ctx.moveTo(side * 148 * L * u, 8 * u);
+        ctx.quadraticCurveTo(side * 170 * L * u, 46 * u, side * 158 * L * u, 96 * u);
         ctx.stroke();
       }
       ctx.restore();
@@ -915,6 +1086,19 @@ export function createRenderer(canvas) {
     ctx.beginPath();
     ctx.ellipse(0, -60 * u, 6 * u, 7 * u, 0, 0, Math.PI * 2);
     ctx.fill();
+    // Exhaust shimmer: a prop plane has no afterburner, so the heat
+    // is a small pulsing amber glow at the exhaust stubs on the
+    // cowling sides — hot metal, not flame, and never a jet.
+    const exGlow = 0.5 + 0.3 * Math.sin(time * 11);
+    for (const side of [-1, 1]) {
+      const ex = ctx.createRadialGradient(side * 16 * u, -28 * u, 1, side * 16 * u, -28 * u, 14 * u);
+      ex.addColorStop(0, `rgba(255, 180, 90, ${0.55 * exGlow})`);
+      ex.addColorStop(1, 'rgba(255, 180, 90, 0)');
+      ctx.fillStyle = ex;
+      ctx.beginPath();
+      ctx.arc(side * 16 * u, -28 * u, 14 * u, 0, Math.PI * 2);
+      ctx.fill();
+    }
     // Navigation lights with glow halos: red left, green right, white
     // tail strobe, at the wingtips of the new wing geometry.
     const blink = 0.5 + 0.5 * Math.sin(time * 6);
@@ -978,38 +1162,81 @@ export function createRenderer(canvas) {
   }
 
   // ---- HUD ------------------------------------------------------------------
-  function drawHUD(plane, mission, target, time) {
+  // Green aviation HUD in the reference's thin line-work: SPD/ALT
+  // vertical tapes with a boxed current value, a radar scope
+  // bottom-left, a centre gunsight cross. Our own mission names and
+  // values throughout — nothing copied from the reference's text.
+  function drawHUD(plane, mission, target, time, terrain) {
     const altFt = Math.round(plane.y * 3.281);
     const spdKt = Math.round(plane.speed * 1.944);
     const vsi = Math.round(plane.verticalSpeed * 196.85);
     const hdg = Math.round(((plane.heading * 180) / Math.PI % 360 + 360) % 360);
     const fuelPct = plane.fuel / plane.fuelCap;
     const dmgPct = plane.damage / plane.damageMax;
+    const GREEN = '#6dff7e';
+    const GREEN_TEXT = '#8dff9a';
+    const GREEN_DIM = 'rgba(109, 255, 126, 0.45)';
+    const GREEN_BRIGHT = '#e8ffe9';
+    const PANEL = 'rgba(6, 14, 10, 0.72)';
     ctx.save();
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
-    // Top-left instruments.
-    ctx.fillStyle = 'rgba(8, 12, 22, 0.82)';
-    ctx.fillRect(18, 16, 250, 96);
-    ctx.strokeStyle = 'rgba(255, 179, 71, 0.9)';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(18, 16, 250, 96);
-    ctx.fillStyle = '#9fb4d8';
-    ctx.font = 'bold 13px system-ui, sans-serif';
-    ctx.fillText('ALT', 30, 24);
-    ctx.fillText('SPD', 30, 54);
-    ctx.fillText('VSI', 30, 84);
-    ctx.fillStyle = '#fff';
-    ctx.font = 'bold 26px system-ui, monospace';
-    ctx.fillText(`${altFt} ft`, 92, 20);
-    ctx.fillText(`${spdKt} kt`, 92, 50);
-    ctx.fillText(`${vsi >= 0 ? '+' : ''}${vsi} fpm`, 92, 80);
+    // One vertical tape: a line with ticks and a boxed current value
+    // riding on it, like the reference's SPD/ALT tapes. `step` is the
+    // value change per tick; the box sits at the tape's middle.
+    function tape(x, label, value, unit, step) {
+      const top = 150;
+      const mid = 250;
+      const bot = 350;
+      ctx.strokeStyle = GREEN_DIM;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(x, top);
+      ctx.lineTo(x, bot);
+      ctx.stroke();
+      ctx.font = 'bold 12px system-ui, monospace';
+      ctx.textAlign = 'center';
+      for (let k = -4; k <= 4; k += 1) {
+        const y = mid + k * 25;
+        const tick = k % 2 === 0 ? 12 : 6;
+        ctx.strokeStyle = GREEN_DIM;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(x - tick, y);
+        ctx.lineTo(x + tick, y);
+        ctx.stroke();
+        if (k % 2 === 0 && k !== 0) {
+          ctx.fillStyle = GREEN_TEXT;
+          ctx.fillText(String(value + k * step), x, y - 6);
+        }
+      }
+      // Boxed current value on the tape.
+      const bx = x - 46;
+      ctx.fillStyle = PANEL;
+      ctx.fillRect(bx, mid - 18, 92, 36);
+      ctx.strokeStyle = GREEN;
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(bx, mid - 18, 92, 36);
+      ctx.fillStyle = GREEN_BRIGHT;
+      ctx.font = 'bold 19px system-ui, monospace';
+      ctx.fillText(`${value} ${unit}`, x, mid - 11);
+      ctx.fillStyle = GREEN_TEXT;
+      ctx.font = 'bold 14px system-ui, sans-serif';
+      ctx.fillText(label, x, top - 24);
+    }
+    tape(64, 'SPD', spdKt, 'kt', 10);
+    tape(W - 64, 'ALT', altFt, 'ft', 100);
+    ctx.textAlign = 'center';
+    ctx.fillStyle = GREEN_TEXT;
+    ctx.font = 'bold 14px system-ui, monospace';
+    ctx.fillText(`VSI ${vsi >= 0 ? '+' : ''}${vsi} fpm`, 64, 372);
     // Top-right compass strip.
-    ctx.fillStyle = 'rgba(8, 12, 22, 0.82)';
+    ctx.fillStyle = PANEL;
     ctx.fillRect(W - 268, 16, 250, 64);
-    ctx.strokeStyle = 'rgba(255, 179, 71, 0.9)';
+    ctx.strokeStyle = GREEN;
+    ctx.lineWidth = 1.5;
     ctx.strokeRect(W - 268, 16, 250, 64);
-    ctx.fillStyle = '#fff';
+    ctx.fillStyle = GREEN_BRIGHT;
     ctx.font = 'bold 24px system-ui, monospace';
     ctx.textAlign = 'center';
     ctx.fillText(`HDG ${String(hdg).padStart(3, '0')}°`, W - 143, 24);
@@ -1019,7 +1246,7 @@ export function createRenderer(canvas) {
       let d = ((deg - hdg + 540) % 360) - 180;
       if (Math.abs(d) > 70) continue;
       const x = W - 143 + d * 1.5;
-      ctx.fillStyle = d === 0 ? '#ffb347' : '#c7d3e8';
+      ctx.fillStyle = d === 0 ? GREEN : GREEN_TEXT;
       ctx.fillText(label, x, 54);
     }
     // Mission banner, centre-top.
@@ -1027,18 +1254,19 @@ export function createRenderer(canvas) {
       const text = missionObjectiveText(mission);
       ctx.font = 'bold 19px system-ui, sans-serif';
       const tw = ctx.measureText(text).width + 36;
-      ctx.fillStyle = 'rgba(8, 12, 22, 0.82)';
+      ctx.fillStyle = PANEL;
       ctx.fillRect(CX - tw / 2, 16, tw, 40);
-      ctx.strokeStyle = 'rgba(255, 179, 71, 0.9)';
+      ctx.strokeStyle = GREEN;
+      ctx.lineWidth = 1.5;
       ctx.strokeRect(CX - tw / 2, 16, tw, 40);
-      ctx.fillStyle = '#ffd9a0';
+      ctx.fillStyle = GREEN_BRIGHT;
       ctx.fillText(text, CX, 27);
       if (target) {
         const dx = target.x - plane.x;
         const dy = target.y - plane.y;
         const dz = target.z - plane.z;
         const dist = Math.round(Math.sqrt(dx * dx + dy * dy + dz * dz));
-        ctx.fillStyle = '#9fb4d8';
+        ctx.fillStyle = GREEN_TEXT;
         ctx.font = 'bold 14px system-ui, sans-serif';
         ctx.fillText(`NEXT TARGET ${dist} m`, CX, 60);
       }
@@ -1046,24 +1274,26 @@ export function createRenderer(canvas) {
     // Bottom-left: fuel + damage. Solid fill, not translucent: the
     // panel sits over the world, and a translucent fill lets bright
     // world marks (strip lights) ghost through onto the instruments.
+    // Green like the rest of the HUD; damage stays red as a warning.
     ctx.textAlign = 'left';
-    ctx.fillStyle = 'rgb(8, 12, 22)';
+    ctx.fillStyle = 'rgb(6, 14, 10)';
     ctx.fillRect(18, H - 92, 250, 76);
-    ctx.strokeStyle = 'rgba(255, 179, 71, 0.9)';
+    ctx.strokeStyle = GREEN;
+    ctx.lineWidth = 1.5;
     ctx.strokeRect(18, H - 92, 250, 76);
-    ctx.fillStyle = '#9fb4d8';
+    ctx.fillStyle = GREEN_TEXT;
     ctx.font = 'bold 13px system-ui, sans-serif';
     ctx.fillText('FUEL', 30, H - 84);
     ctx.fillText('DMG', 30, H - 52);
-    ctx.fillStyle = '#22304a';
+    ctx.fillStyle = '#1a2e22';
     ctx.fillRect(92, H - 86, 158, 16);
-    ctx.fillStyle = fuelPct < 0.25 ? '#ff5a4d' : '#ffb347';
+    ctx.fillStyle = fuelPct < 0.25 ? '#ff5a4d' : '#4ade80';
     ctx.fillRect(92, H - 86, 158 * fuelPct, 16);
-    ctx.fillStyle = '#22304a';
+    ctx.fillStyle = '#1a2e22';
     ctx.fillRect(92, H - 54, 158, 16);
-    ctx.fillStyle = dmgPct > 0.6 ? '#ff5a4d' : '#e8b13c';
+    ctx.fillStyle = dmgPct > 0.6 ? '#ff5a4d' : '#4ade80';
     ctx.fillRect(92, H - 54, 158 * dmgPct, 16);
-    ctx.fillStyle = '#fff';
+    ctx.fillStyle = GREEN_BRIGHT;
     ctx.font = 'bold 13px system-ui, sans-serif';
     ctx.fillText(`${Math.round(fuelPct * 100)}%`, 108, H - 84);
     ctx.fillText(`${Math.round(dmgPct * 100)}%`, 108, H - 52);
@@ -1089,7 +1319,7 @@ export function createRenderer(canvas) {
     ctx.lineTo(ar, -pitchOff);
     ctx.stroke();
     ctx.restore();
-    ctx.strokeStyle = '#ffb347';
+    ctx.strokeStyle = GREEN;
     ctx.lineWidth = 2.5;
     ctx.beginPath();
     ctx.arc(ax, ay, ar, 0, Math.PI * 2);
@@ -1103,9 +1333,93 @@ export function createRenderer(canvas) {
     ctx.fill();
     // Score / credits line under the compass.
     ctx.textAlign = 'right';
-    ctx.fillStyle = '#ffd9a0';
+    ctx.fillStyle = GREEN_TEXT;
     ctx.font = 'bold 15px system-ui, sans-serif';
     ctx.fillText(`STORM CREDITS ${mission ? mission.credits ?? 0 : 0}`, W - 18, 92);
+    // Radar scope bottom-left, above the FUEL/DMG panel: the region's
+    // islands as green outlines centred on the plane, mission rings
+    // as dots, own plane as a triangle. A real scope, not decoration.
+    if (terrain) {
+      const rx = 18;
+      const ry = H - 216;
+      const rw = 118;
+      const rh = 118;
+      ctx.fillStyle = 'rgba(6, 14, 10, 0.78)';
+      ctx.fillRect(rx, ry, rw, rh);
+      ctx.strokeStyle = GREEN;
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(rx, ry, rw, rh);
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(rx, ry, rw, rh);
+      ctx.clip();
+      const rcx = rx + rw / 2;
+      const rcy = ry + rh / 2;
+      const k = rw / 4200;
+      ctx.strokeStyle = GREEN_DIM;
+      ctx.lineWidth = 1;
+      for (const rr of [rw * 0.25, rw * 0.48]) {
+        ctx.beginPath();
+        ctx.arc(rcx, rcy, rr, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      ctx.beginPath();
+      ctx.moveTo(rx, rcy);
+      ctx.lineTo(rx + rw, rcy);
+      ctx.moveTo(rcx, ry);
+      ctx.lineTo(rcx, ry + rh);
+      ctx.stroke();
+      ctx.strokeStyle = 'rgba(109, 255, 126, 0.8)';
+      for (const isl of terrain.islands) {
+        const ix = rcx + (isl.x - plane.x) * k;
+        const iy = rcy + (isl.z - plane.z) * k;
+        const ir = Math.max(2, isl.r * k);
+        if (ix < rx - ir || ix > rx + rw + ir || iy < ry - ir || iy > ry + rh + ir) continue;
+        ctx.beginPath();
+        ctx.arc(ix, iy, ir, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      if (mission) {
+        for (const ring of mission.rings) {
+          const dx = rcx + (ring.x - plane.x) * k;
+          const dy = rcy + (ring.z - plane.z) * k;
+          if (dx < rx || dx > rx + rw || dy < ry || dy > ry + rh) continue;
+          ctx.fillStyle = ring.done ? '#4ade80' : GREEN_BRIGHT;
+          ctx.beginPath();
+          ctx.arc(dx, dy, 2.5, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+      ctx.fillStyle = GREEN_BRIGHT;
+      ctx.beginPath();
+      ctx.moveTo(rcx, rcy - 6);
+      ctx.lineTo(rcx - 5, rcy + 5);
+      ctx.lineTo(rcx + 5, rcy + 5);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    }
+    // Centre gunsight cross, the reference's HUD reticle, sitting
+    // just ahead of the nose.
+    const gx = CX;
+    const gy = H * 0.42;
+    ctx.save();
+    ctx.strokeStyle = 'rgba(109, 255, 126, 0.85)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(gx, gy, 14, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(gx - 24, gy);
+    ctx.lineTo(gx - 16, gy);
+    ctx.moveTo(gx + 16, gy);
+    ctx.lineTo(gx + 24, gy);
+    ctx.moveTo(gx, gy - 24);
+    ctx.lineTo(gx, gy - 16);
+    ctx.moveTo(gx, gy + 16);
+    ctx.lineTo(gx, gy + 24);
+    ctx.stroke();
+    ctx.restore();
     // Warnings.
     ctx.textAlign = 'center';
     if (plane.speed < 30 && plane.y > 10) {
@@ -1308,20 +1622,23 @@ export function createRenderer(canvas) {
     // screenshot staging sets so the cover bolt lights its own scene.
     const flash = Math.max(weather.flash, world.forcedFlash || 0);
     drawSky(region, storm, flash, time);
-    // Chase camera: behind and above the plane, looking forward.
+    // Low chase camera, close behind the plane and looking forward:
+    // the reference's low rear view, so the world below is close and
+    // detailed and the horizon sits high in the frame.
     const fx = Math.sin(plane.heading);
     const fz = Math.cos(plane.heading);
     const cam = {
-      x: plane.x - fx * 42,
-      y: plane.y + 13,
-      z: plane.z - fz * 42,
+      x: plane.x - fx * 36,
+      y: plane.y + 9,
+      z: plane.z - fz * 36,
       yaw: plane.heading,
-      pitch: -0.10 - plane.pitch * 0.35,
+      pitch: -0.06 - plane.pitch * 0.35,
       roll: plane.bank * 0.55,
     };
     const project = drawTerrain(terrain, cam, region, flash, storm);
     drawCloudShadows(project, weather);
     drawFoam(project, terrain);
+    drawTown(project, terrain, cam, flash, hazeRgb(region));
     drawClouds(project, weather, time, flash);
     drawStrip(terrain, project, region.strip, flash, hazeRgb(region));
     if (mission) {
@@ -1343,9 +1660,11 @@ export function createRenderer(canvas) {
         // still to come are small dots, so the player sees where they are
         // without the clutter.
         if (drop !== activeDrop) {
-          // A dot landing on the FUEL/DMG panel would paint over the
-          // instruments: skip it, same as the active circle's clip.
+          // A dot landing on the FUEL/DMG panel or the radar scope
+          // would paint over the instruments: skip it, same as the
+          // active circle's clip.
           if (p.x > 12 && p.x < 274 && p.y > H - 98 && p.y < H - 10) continue;
+          if (p.x > 12 && p.x < 142 && p.y > H - 222 && p.y < H - 92) continue;
           ctx.save();
           ctx.translate(p.x, p.y);
           ctx.fillStyle = 'rgba(120, 220, 140, 0.9)';
@@ -1359,17 +1678,18 @@ export function createRenderer(canvas) {
         // the frame, and its label goes below the circle so it cannot be
         // cut off at the top of the screen.
         // HUD fix: the circle must never touch the FUEL/DMG panel
-        // (bottom-left, 18,H-92,250x76). No shrink — the evenodd clip
-        // below already cuts the arc out of the panel rect, so the zone
-        // stays big and readable and the panel simply sits in front of
+        // (bottom-left, 18,H-92,250x76) or the radar scope above it
+        // (18,H-216,118x118). No shrink — the evenodd clip below
+        // already cuts the arc out of both rects, so the zone stays
+        // big and readable and the instruments simply sit in front of
         // it. (A shrink rule here crushed the circle to ~33 px in v2.)
         let radius = Math.min(drop.r * p.s * 0.9, 130);
-        const panelTop = H - 92;
         if (radius < 4) continue;
         ctx.save();
         ctx.beginPath();
         ctx.rect(0, 0, W, H);
-        ctx.rect(12, panelTop - 6, 262, 88);
+        ctx.rect(12, H - 98, 262, 88);
+        ctx.rect(12, H - 222, 130, 124);
         ctx.clip('evenodd');
         ctx.translate(p.x, p.y);
         ctx.strokeStyle = 'rgba(120, 220, 140, 0.95)';
@@ -1396,7 +1716,7 @@ export function createRenderer(canvas) {
     drawLightning(project, bolt);
     // The plane sits fixed on screen, large centre-low, like a chase
     // camera locked to the airframe; the world moves around it.
-    drawPlane(plane, { x: CX, y: H * 0.66 }, time);
+    drawPlane(plane, { x: CX, y: H * 0.68 }, time);
     drawRain(storm, time, plane);
     drawSpeedStreaks(plane, time);
     // Lightning light, second half: a radial wash centred on the bolt
@@ -1416,7 +1736,7 @@ export function createRenderer(canvas) {
       ctx.fillRect(0, 0, W, H);
     }
     ctx.restore();
-    drawHUD(plane, mission, world.target, time);
+    drawHUD(plane, mission, world.target, time, terrain);
     if (world.banner) {
       ctx.textAlign = 'center';
       ctx.fillStyle = '#ffd9a0';
