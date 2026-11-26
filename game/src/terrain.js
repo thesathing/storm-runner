@@ -43,8 +43,28 @@ export function createTerrain(seed) {
     for (const p of peaks) {
       const dx = x - p.x;
       const dz = z - p.z;
-      const d2 = (dx * dx + dz * dz) / (p.r * p.r);
-      if (d2 < 1) h += p.h * (1 - d2);
+      // Rounded dome, not a cone: a squared falloff gives a curved
+      // peak and a soft shoulder instead of a pyramid point. The
+      // radius wobbles with direction so the silhouette is irregular,
+      // never a straight-edged triangle.
+      const ang = Math.atan2(dz, dx);
+      const wob = 1 + 0.45 * rng.noise2(Math.cos(ang) * 1.2 + 9, Math.sin(ang) * 1.2 - 4);
+      const re = p.r * wob;
+      const d2 = (dx * dx + dz * dz) / (re * re);
+      if (d2 < 1) {
+        const dome = (1 - d2) * (1 - d2);
+        h += p.h * dome;
+        // Ridge variation on the flanks so the faces are not flat.
+        h += p.h * 0.20 * rng.noise2(x * 0.02 + 3, z * 0.02 - 8) * (1 - d2);
+      }
+      // Two lower shoulder bumps, one on each side, break the
+      // symmetry so no single straight slope defines the silhouette.
+      for (const [ox, oz, hh] of [[0.45, 0.30, 0.45], [-0.40, 0.35, 0.35]]) {
+        const sx = dx - p.r * ox;
+        const sz = dz - p.r * oz;
+        const sd2 = (sx * sx + sz * sz) / ((p.r * 0.6) * (p.r * 0.6));
+        if (sd2 < 1) h += p.h * hh * (1 - sd2) * (1 - sd2);
+      }
     }
     // World rim falls away into open sea so the horizon is water.
     const edge = Math.max(Math.abs(x), Math.abs(z)) / (WORLD_SIZE / 2);
@@ -104,10 +124,13 @@ export function createTerrain(seed) {
     const v = 1 + n1 * 0.08 + n2 * 0.04;
     let base;
     if (h <= 1.5) {
-      // Sea: deep blue-green, darker with slow wave variation, never
-      // one flat colour. The renderer fogs it pale toward the horizon.
-      const w = 0.5 + 0.5 * rng.noise2(x * 0.009 + 31, z * 0.009 - 19);
-      base = [10 + w * 8, 62 + w * 18, 72 + w * 16];
+      // Sea: deep blue-green. The variation is VERY low frequency
+      // (wavelength ~800 m, far wider than one 95 m mesh cell) and
+      // small, so neighbouring quads differ by ~1% and no square
+      // boundary can read. The old 0.009/m noise flipped phase from
+      // one quad to the next, which is what drew the tile grid.
+      const w = 0.5 + 0.5 * rng.noise2(x * 0.0013 + 31, z * 0.0013 - 19);
+      base = [12 + w * 5, 64 + w * 10, 74 + w * 9];
     } else if (h <= 6) {
       base = [208, 178, 120]; // warm sand beach ring
     } else if (h <= 30) {
@@ -127,10 +150,13 @@ export function createTerrain(seed) {
       const dark = 1 - cliff * 0.45;
       base = [base[0] * dark * 0.9, base[1] * dark * 0.9, base[2] * dark];
     }
+    // The sea gets an even gentler multiplier than the land: the
+    // broad-patch noise would otherwise still step at quad edges.
+    const vv = h <= 1.5 ? 1 + n1 * 0.02 + n2 * 0.01 : v;
     return [
-      Math.max(0, Math.min(255, Math.round(base[0] * v))),
-      Math.max(0, Math.min(255, Math.round(base[1] * v))),
-      Math.max(0, Math.min(255, Math.round(base[2] * v))),
+      Math.max(0, Math.min(255, Math.round(base[0] * vv))),
+      Math.max(0, Math.min(255, Math.round(base[1] * vv))),
+      Math.max(0, Math.min(255, Math.round(base[2] * vv))),
     ];
   }
 
