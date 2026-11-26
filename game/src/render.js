@@ -54,14 +54,40 @@ export function createRenderer(canvas) {
   const SUN_Y = H * 0.60;
 
   // ---- sky ---------------------------------------------------------------
+  // A soft-edged puff: a radial gradient that fades to transparent at
+  // its rim, so no cloud ever shows an ellipse outline. Drawn as a
+  // scaled circle so the gradient stays round in the puff's own frame.
+  function softBlob(x, y, rx, ry, rgb, alpha) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.scale(1, ry / rx);
+    const g = ctx.createRadialGradient(0, 0, 0, 0, 0, rx);
+    g.addColorStop(0, css(rgb, alpha));
+    g.addColorStop(0.65, css(rgb, alpha * 0.55));
+    g.addColorStop(1, css(rgb, 0));
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(0, 0, rx, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
   function drawSky(region, storm, flash, time) {
     const g = ctx.createLinearGradient(0, 0, 0, H);
     g.addColorStop(0, region.sky[0]);
-    g.addColorStop(0.45, region.sky[1]);
-    g.addColorStop(0.68, region.sky[2]);
-    g.addColorStop(0.82, '#3a3a44');
+    g.addColorStop(0.38, region.sky[1]);
+    g.addColorStop(0.62, region.sky[2]);
+    g.addColorStop(0.78, '#4a4640');
     g.addColorStop(1, '#20242e');
     ctx.fillStyle = g;
+    ctx.fillRect(0, 0, W, H);
+    // Warm wash around the sun so the sky is amber near the sun and
+    // cooler away from it, not one flat band.
+    const warm = ctx.createRadialGradient(SUN_X, SUN_Y, 10, SUN_X, SUN_Y, 560);
+    warm.addColorStop(0, 'rgba(255, 206, 130, 0.55)');
+    warm.addColorStop(0.45, 'rgba(255, 186, 110, 0.22)');
+    warm.addColorStop(1, 'rgba(255, 186, 110, 0)');
+    ctx.fillStyle = warm;
     ctx.fillRect(0, 0, W, H);
     // Sun disc + halo: a real sun, not just a glow.
     const rg = ctx.createRadialGradient(SUN_X, SUN_Y, 6, SUN_X, SUN_Y, 340);
@@ -71,6 +97,13 @@ export function createRenderer(canvas) {
     rg.addColorStop(1, 'rgba(255, 186, 100, 0)');
     ctx.fillStyle = rg;
     ctx.fillRect(0, 0, W, H);
+    // Horizontal glare streak through the sun, like a real low sun.
+    const glare = ctx.createLinearGradient(SUN_X - 320, 0, SUN_X + 320, 0);
+    glare.addColorStop(0, 'rgba(255, 230, 170, 0)');
+    glare.addColorStop(0.5, 'rgba(255, 230, 170, 0.30)');
+    glare.addColorStop(1, 'rgba(255, 230, 170, 0)');
+    ctx.fillStyle = glare;
+    ctx.fillRect(SUN_X - 320, SUN_Y - 4, 640, 8);
     ctx.fillStyle = '#ffedbe';
     ctx.beginPath();
     ctx.arc(SUN_X, SUN_Y, 24, 0, Math.PI * 2);
@@ -79,6 +112,13 @@ export function createRenderer(canvas) {
     ctx.beginPath();
     ctx.arc(SUN_X, SUN_Y, 17, 0, Math.PI * 2);
     ctx.fill();
+    // Thin high haze: a faint soft band well above the horizon.
+    const hh = ctx.createLinearGradient(0, H * 0.26, 0, H * 0.36);
+    hh.addColorStop(0, 'rgba(200, 210, 230, 0)');
+    hh.addColorStop(0.5, 'rgba(200, 210, 230, 0.07)');
+    hh.addColorStop(1, 'rgba(200, 210, 230, 0)');
+    ctx.fillStyle = hh;
+    ctx.fillRect(0, H * 0.26, W, H * 0.10);
     // Distant haze band hugging the horizon.
     const hz = ctx.createLinearGradient(0, H * 0.52, 0, H * 0.78);
     hz.addColorStop(0, 'rgba(198, 164, 110, 0)');
@@ -86,8 +126,14 @@ export function createRenderer(canvas) {
     hz.addColorStop(1, 'rgba(198, 164, 110, 0)');
     ctx.fillStyle = hz;
     ctx.fillRect(0, H * 0.52, W, H * 0.26);
-    // Drifting cloud bank near the horizon: shaded puff clusters with a
-    // lit top and a dark belly, not flat silhouettes.
+    // Distant cloud deck fading into the haze: very faint wide puffs
+    // across the horizon, so the sky never ends in a hard line.
+    for (let i = 0; i < 6; i += 1) {
+      const bx = ((i * 331 + time * 4) % (W + 600)) - 300;
+      softBlob(bx, H * 0.56, 260, 26, [150, 158, 178], 0.16);
+    }
+    // Drifting cloud bank near the horizon: soft-edged shaded puffs
+    // with a lit top and a dark belly, never a visible ellipse outline.
     for (let i = 0; i < 4; i += 1) {
       const bx = ((i * 521 + time * 6) % (W + 560)) - 280;
       const by = H * 0.40 + (i % 3) * 30;
@@ -97,13 +143,8 @@ export function createRenderer(canvas) {
         { dx: 80, dy: 8, rx: 110, ry: 24 },
       ];
       for (const p of puffs) {
-        const pg = ctx.createLinearGradient(0, by + p.dy - p.ry, 0, by + p.dy + p.ry);
-        pg.addColorStop(0, 'rgba(96, 104, 132, 0.85)');
-        pg.addColorStop(1, 'rgba(18, 24, 40, 0.9)');
-        ctx.fillStyle = pg;
-        ctx.beginPath();
-        ctx.ellipse(bx + p.dx, by + p.dy, p.rx, p.ry, 0, 0, Math.PI * 2);
-        ctx.fill();
+        softBlob(bx + p.dx, by + p.dy + p.ry * 0.3, p.rx, p.ry, [16, 22, 38], 0.85);
+        softBlob(bx + p.dx, by + p.dy - p.ry * 0.3, p.rx * 0.72, p.ry * 0.6, [110, 120, 148], 0.8);
       }
     }
     if (flash > 0) {
@@ -115,7 +156,8 @@ export function createRenderer(canvas) {
   // ---- terrain mesh ------------------------------------------------------
   // `light` is the lightning lift (0..1): when a strike flashes, every
   // facet brightens with it, so the flash reads as light on the world.
-  function drawTerrain(terrain, cam, region, light) {
+  // `storm` is the storm strength at the plane, for whitecaps.
+  function drawTerrain(terrain, cam, region, light, storm) {
     const project = terrain.makeProjector(cam, FOCAL, CX, CY);
     const fx = Math.sin(cam.yaw);
     const fz = Math.cos(cam.yaw);
@@ -170,20 +212,91 @@ export function createRenderer(canvas) {
       ctx.lineTo(p01.x, p01.y);
       ctx.closePath();
       ctx.fill();
-      // Sun glitter on the sea: sparse warm flecks on the sun side of
-      // the frame, fading out with the fog. No checkerboard, just light
-      // on moving water.
+      // Stroke every quad in its own fill colour: anti-aliasing leaves
+      // hairline gaps between neighbouring quads, and the sky showing
+      // through those gaps is what read as a hard grid. The stroke
+      // closes the seams without changing the colours.
+      ctx.strokeStyle = css(rgb);
+      ctx.lineWidth = 1.2;
+      ctx.stroke();
       if (q.hm <= 1.5 && fog < 0.6) {
         const sp = project((q.x0 + q.x1) / 2, 0, (q.z0 + q.z1) / 2);
-        if (sp && sp.x > CX + 40 && terrain.hashCell(q.x0, q.z0) > 0.90) {
-          ctx.fillStyle = `rgba(255, 214, 140, ${(1 - fog) * 0.55})`;
+        if (!sp) continue;
+        const hc = terrain.hashCell(q.x0, q.z0);
+        // Sun glitter on the sea: warm flecks densest on the glitter
+        // path toward the sun, fading with distance from it and with
+        // the fog. Real glitter is view-dependent, so it sits on the
+        // water as light, not as painted dots.
+        if (hc > 0.86) {
+          const sunProx = Math.max(0, 1 - Math.abs(sp.x - SUN_X) / 620);
+          const a = (1 - fog) * 0.55 * (0.25 + 0.75 * sunProx);
+          if (a > 0.05) {
+            ctx.fillStyle = `rgba(255, 214, 140, ${a})`;
+            ctx.beginPath();
+            ctx.ellipse(sp.x, sp.y, 7 * sp.s * 0.4 + 2, 2.5, 0, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+        // Whitecaps in the storm: sparse white flecks on the rough sea,
+        // away from the glitter path so the two never mix into one.
+        if (storm > 0.45 && hc > 0.965 && sp.x < SUN_X - 120) {
+          ctx.fillStyle = `rgba(235, 244, 250, ${(storm - 0.45) * 0.7 * (1 - fog)})`;
           ctx.beginPath();
-          ctx.ellipse(sp.x, sp.y, 7 * sp.s * 0.4 + 2, 2.5, 0, 0, Math.PI * 2);
+          ctx.ellipse(sp.x, sp.y, 4 * sp.s * 0.4 + 1.5, 1.8, 0, 0, Math.PI * 2);
           ctx.fill();
         }
       }
     }
     return project;
+  }
+
+  // ---- cloud shadows + shoreline foam -----------------------------------
+  // Soft dark patches where the storm cells shade the sea and the
+  // islands: a big cheap win for realism, and the reason a still frame
+  // reads as a lit world instead of a flat map.
+  function drawCloudShadows(project, weather) {
+    for (const cell of weather.cells) {
+      const p = project(cell.x, 0, cell.z);
+      if (!p || p.depth < 30) continue;
+      const rx = cell.r * p.s * 0.9;
+      if (rx < 8) continue;
+      const fogA = 1 - fogFactor(p.depth) * 0.7;
+      softBlob(p.x, p.y, rx, rx * 0.42, [6, 12, 24], 0.17 * fogA * (0.5 + cell.intensity * 0.5));
+    }
+  }
+
+  // White foam rings where the sea meets each island's shore. An
+  // island's coastline is the circle where its bump meets sea level,
+  // so the ring is drawn from the island data itself. Kept faint and
+  // only for islands whose centre is actually in frame: a near or
+  // off-frame island's ring is a giant arc that reads as a white
+  // scratch across the scene, not as foam.
+  function drawFoam(project, terrain) {
+    ctx.save();
+    ctx.strokeStyle = 'rgba(235, 244, 248, 0.14)';
+    ctx.lineWidth = 2;
+    for (const isl of terrain.islands) {
+      const c = project(isl.x, 0.5, isl.z);
+      if (!c || c.depth < 250 || c.x < 0 || c.x > W || c.y < 0 || c.y > H) continue;
+      let started = false;
+      ctx.beginPath();
+      for (let k = 0; k <= 28; k += 1) {
+        const a = (k / 28) * Math.PI * 2;
+        const p = project(isl.x + Math.cos(a) * isl.r, 0.5, isl.z + Math.sin(a) * isl.r);
+        if (!p || p.depth < 30 || p.x < -60 || p.x > W + 60 || p.y < -60 || p.y > H + 60) {
+          started = false;
+          continue;
+        }
+        if (!started) {
+          ctx.moveTo(p.x, p.y);
+          started = true;
+        } else {
+          ctx.lineTo(p.x, p.y);
+        }
+      }
+      ctx.stroke();
+    }
+    ctx.restore();
   }
 
   // ---- strips ------------------------------------------------------------
@@ -205,6 +318,25 @@ export function createRenderer(canvas) {
     if (pts.some((p) => !p)) return;
     const centre = project(strip.x, terrain.groundAt(strip.x, strip.z) + 1.5, strip.z);
     const fog = centre ? fogFactor(centre.depth) : 0;
+    // Grass verge: a slightly wider green pad under the asphalt, so the
+    // strip sits in a field instead of floating on bare terrain.
+    const verge = corners.map(([x, z]) => {
+      const along = (x - strip.x) * dx + (z - strip.z) * dz;
+      const across = (x - strip.x) * px + (z - strip.z) * pz;
+      return [strip.x + dx * along + px * Math.sign(across) * (Math.abs(across) + 14),
+        strip.z + dz * along + pz * Math.sign(across) * (Math.abs(across) + 14)];
+    });
+    const vpts = verge.map(([x, z]) => project(x, terrain.groundAt(x, z) + 1, z));
+    if (!vpts.some((p) => !p)) {
+      let grass = mix([52, 88, 48], haze, fog);
+      if (light > 0) grass = lit(grass, 1 + light * 0.4);
+      ctx.fillStyle = css(grass);
+      ctx.beginPath();
+      ctx.moveTo(vpts[0].x, vpts[0].y);
+      for (let i = 1; i < 4; i += 1) ctx.lineTo(vpts[i].x, vpts[i].y);
+      ctx.closePath();
+      ctx.fill();
+    }
     // Asphalt with noise speckle, fogged like the terrain around it.
     let asphalt = mix([43, 47, 54], haze, fog);
     if (light > 0) asphalt = lit(asphalt, 1 + light * 0.5);
@@ -214,6 +346,19 @@ export function createRenderer(canvas) {
     for (let i = 1; i < 4; i += 1) ctx.lineTo(pts[i].x, pts[i].y);
     ctx.closePath();
     ctx.fill();
+    // Rubber marks near both touchdown zones: dark soft patches along
+    // the centreline where wheels actually meet the asphalt.
+    for (const end of [-1, 1]) {
+      for (let k = 0; k < 4; k += 1) {
+        const t = end * (hl - 46 - k * 16);
+        const p = project(strip.x + dx * t, terrain.groundAt(strip.x + dx * t, strip.z + dz * t) + 2, strip.z + dz * t);
+        if (!p) continue;
+        ctx.fillStyle = `rgba(18, 20, 24, ${0.30 * (1 - fog)})`;
+        ctx.beginPath();
+        ctx.ellipse(p.x, p.y, 14 * p.s * 0.4 + 3, 4 * p.s * 0.4 + 1.5, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
     // Asphalt speckle: short pale ticks scattered along the strip.
     ctx.strokeStyle = `rgba(200, 205, 215, ${0.25 * (1 - fog)})`;
     ctx.lineWidth = 1;
@@ -326,22 +471,24 @@ export function createRenderer(canvas) {
 
   // ---- storm cells, rain, lightning ---------------------------------------
   function drawClouds(project, weather, time, light) {
-    // Storm cells as shaded puff clusters: every puff is a vertical
-    // gradient (lit top, dark belly) with an anvil cap, so a cloud reads
-    // as a lit volume instead of a flat disc. Far cells fade into fog,
-    // and a lightning flash lifts the lit tops together with the terrain.
+    // Storm cells as shaded puff clusters: every puff is built from
+    // soft-edged blobs (dark belly, lit top, warm sun-side edge), so a
+    // cloud reads as a lit volume with no visible ellipse outline at
+    // all. Far cells fade into fog, and a lightning flash lifts the lit
+    // tops together with the terrain. The heaviest cells trail dark
+    // rain shafts down to the sea.
     const lift = light > 0 ? Math.round(light * 70) : 0;
-    const topBase = [125 + lift, 138 + lift, 168 + lift];
-    const bellyBase = [20 + lift, 26 + lift, 42 + lift];
+    const topBase = [132 + lift, 145 + lift, 175 + lift];
+    const bellyBase = [22 + lift, 28 + lift, 46 + lift];
     for (const cell of weather.cells) {
       const puffs = [
-        { dx: -0.5, dy: 0.05, r: 0.42, a: 0.85, rot: -0.12 },
-        { dx: 0, dy: -0.08, r: 0.55, a: 0.9, rot: 0.06 },
-        { dx: 0.5, dy: 0.06, r: 0.44, a: 0.85, rot: 0.14 },
-        { dx: -0.18, dy: 0.14, r: 0.36, a: 0.8, rot: -0.06 },
-        { dx: 0.22, dy: 0.15, r: 0.38, a: 0.8, rot: 0.1 },
+        { dx: -0.5, dy: 0.05, r: 0.42, a: 0.85 },
+        { dx: 0, dy: -0.08, r: 0.55, a: 0.9 },
+        { dx: 0.5, dy: 0.06, r: 0.44, a: 0.85 },
+        { dx: -0.18, dy: 0.14, r: 0.36, a: 0.8 },
+        { dx: 0.22, dy: 0.15, r: 0.38, a: 0.8 },
         // Anvil cap: wide, flat, catching the sun on top.
-        { dx: 0, dy: -0.22, r: 0.62, a: 0.55, rot: 0, anvil: true },
+        { dx: 0, dy: -0.22, r: 0.62, a: 0.55, anvil: true },
       ];
       for (const puff of puffs) {
         const p = project(
@@ -354,13 +501,34 @@ export function createRenderer(canvas) {
         if (rx < 4) continue;
         const ry = puff.anvil ? rx * 0.22 : rx * 0.52;
         const fogA = 1 - fogFactor(p.depth) * 0.75;
-        const pg = ctx.createLinearGradient(0, p.y - ry, 0, p.y + ry);
-        pg.addColorStop(0, css(mix(topBase, [255, 220, 160], puff.anvil ? 0.35 : 0), puff.a * fogA));
-        pg.addColorStop(1, css(bellyBase, puff.a * fogA));
-        ctx.fillStyle = pg;
-        ctx.beginPath();
-        ctx.ellipse(p.x, p.y, rx, ry, puff.rot, 0, Math.PI * 2);
-        ctx.fill();
+        const a = puff.a * fogA;
+        // Belly first (full puff, dark), then the lit top (smaller,
+        // offset up), then a warm sun-side kiss on the anvil.
+        softBlob(p.x, p.y + ry * 0.28, rx, ry, bellyBase, a * 0.9);
+        softBlob(p.x, p.y - ry * 0.28, rx * 0.72, ry * 0.58, topBase, a * 0.9);
+        if (puff.anvil) {
+          softBlob(p.x + rx * 0.25, p.y - ry * 0.3, rx * 0.5, ry * 0.4, [255, 214, 150], a * 0.5);
+        }
+      }
+      // Rain shaft under a heavy cell: a soft dark column falling from
+      // the cloud base toward the sea.
+      if (cell.intensity > 0.7) {
+        const top = project(cell.x, cell.base + 40, cell.z);
+        const bot = project(cell.x, 0, cell.z);
+        if (top && bot && top.depth > 30) {
+          const w = cell.r * 0.35 * top.s;
+          const sg = ctx.createLinearGradient(top.x, top.y, bot.x, bot.y);
+          sg.addColorStop(0, `rgba(30, 42, 66, ${0.34 * (1 - fogFactor(top.depth) * 0.7)})`);
+          sg.addColorStop(1, 'rgba(30, 42, 66, 0)');
+          ctx.fillStyle = sg;
+          ctx.beginPath();
+          ctx.moveTo(top.x - w / 2, top.y);
+          ctx.lineTo(top.x + w / 2, top.y);
+          ctx.lineTo(bot.x + w / 3, bot.y);
+          ctx.lineTo(bot.x - w / 3, bot.y);
+          ctx.closePath();
+          ctx.fill();
+        }
       }
     }
   }
@@ -377,6 +545,16 @@ export function createRenderer(canvas) {
     ctx.fillStyle = gg;
     ctx.fillRect(0, 0, W, H);
     ctx.save();
+    // Wide soft glow under the core first, so the bolt is light in the
+    // air, not a white line pasted on top of the scene.
+    ctx.strokeStyle = 'rgba(190, 208, 255, 0.35)';
+    ctx.lineWidth = 12;
+    ctx.shadowColor = '#cfe0ff';
+    ctx.shadowBlur = 30;
+    ctx.beginPath();
+    ctx.moveTo(pts[0].x, pts[0].y);
+    for (let i = 1; i < pts.length; i += 1) ctx.lineTo(pts[i].x, pts[i].y);
+    ctx.stroke();
     ctx.strokeStyle = '#f5f7ff';
     ctx.lineWidth = 4;
     ctx.shadowColor = '#cfe0ff';
@@ -385,7 +563,7 @@ export function createRenderer(canvas) {
     ctx.moveTo(pts[0].x, pts[0].y);
     for (let i = 1; i < pts.length; i += 1) ctx.lineTo(pts[i].x, pts[i].y);
     ctx.stroke();
-    // A thinner branch splitting off mid-bolt, for a real strike shape.
+    // Two thinner branches splitting off, for a real strike shape.
     const mid = pts[Math.floor(pts.length / 2)];
     const end = pts[pts.length - 1];
     ctx.lineWidth = 2;
@@ -394,6 +572,12 @@ export function createRenderer(canvas) {
     ctx.moveTo(mid.x, mid.y);
     ctx.lineTo(mid.x + (end.x - mid.x) * 0.4 + 46, mid.y + (end.y - mid.y) * 0.4 + 30);
     ctx.lineTo(mid.x + (end.x - mid.x) * 0.7 + 70, mid.y + (end.y - mid.y) * 0.7 + 64);
+    ctx.stroke();
+    const upper = pts[1] || pts[0];
+    ctx.beginPath();
+    ctx.moveTo(upper.x, upper.y);
+    ctx.lineTo(upper.x - 52, upper.y + 74);
+    ctx.lineTo(upper.x - 88, upper.y + 128);
     ctx.stroke();
     ctx.restore();
   }
@@ -446,11 +630,18 @@ export function createRenderer(canvas) {
     ctx.restore();
   }
 
-  // ---- the plane: drawn big, built from parts ------------------------------
-  // Pitch is VISIBLE now: nose-up foreshortens the fuselage (the chase
-  // camera sees more of the tail, less of the nose) and nose-down
-  // stretches it, on top of the sprite riding up/down. The old build only
-  // rolled, so pitch never read in a still frame.
+  // ---- the plane: a true chase 3/4 view, built from parts ---------------
+  // The old sprite was a long vertical dart: fuselage straight up the
+  // frame, nose at the top, a big prop halo around it — it read as a
+  // rocket hovering, not a plane flying forward. This one is a chase
+  // view: the fuselage is a short wedge receding INTO the screen (nose
+  // small and high, tail big and low), the wings spread wide with
+  // perspective and dihedral, the fin rises from the tail, and the prop
+  // is a small blurred disc at the nose only. Pitch still reads by
+  // foreshortening (nose-up = shorter fuselage, tail drops); banking
+  // foreshortens the lowered wing and, with the camera roll, tilts the
+  // horizon the other way, so a bank reads as a roll, not a spinning
+  // cardboard cutout.
   function drawPlane(plane, screenPos, time) {
     const S = 300; // sprite width in px
     const bank = plane.bank;
@@ -458,215 +649,276 @@ export function createRenderer(canvas) {
     const py = screenPos.y - plane.pitch * 60;
     ctx.save();
     ctx.translate(px, py);
-    ctx.rotate(bank * 0.9);
-    const pitchSq = Math.max(0.62, Math.min(1.4, 1 - plane.pitch * 0.5));
+    ctx.rotate(bank * 0.55);
+    const pitchSq = Math.max(0.7, Math.min(1.3, 1 - plane.pitch * 0.9));
     ctx.scale(1, pitchSq);
     const u = S / 300;
-    // Prop blur disc at the nose (top): translucent disc, rim ring, and
-    // faint spokes turning with time so the prop reads as spinning.
-    ctx.fillStyle = 'rgba(220, 228, 240, 0.28)';
+    // Wing perspective: the lowered wing (inside of the turn) shortens,
+    // the raised wing lengthens.
+    const leftL = Math.max(0.7, Math.min(1.3, 1 + bank * 0.22));
+    const rightL = Math.max(0.7, Math.min(1.3, 1 - bank * 0.22));
+    // Prop: a small translucent blurred disc at the nose only, no rim
+    // ring, faint spokes turning with time. Never a halo.
+    ctx.fillStyle = 'rgba(220, 228, 240, 0.16)';
     ctx.beginPath();
-    ctx.ellipse(0, -118 * u, 34 * u, 46 * u, 0, 0, Math.PI * 2);
+    ctx.ellipse(0, -62 * u, 15 * u, 22 * u, 0, 0, Math.PI * 2);
     ctx.fill();
-    ctx.strokeStyle = 'rgba(240,244,250,0.5)';
+    ctx.strokeStyle = 'rgba(240,244,250,0.14)';
     ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.ellipse(0, -118 * u, 26 * u, 38 * u, 0, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.strokeStyle = 'rgba(240,244,250,0.28)';
-    ctx.lineWidth = 3;
     const spoke = time * 9;
-    for (let k = 0; k < 3; k += 1) {
-      const a = spoke + (k * Math.PI) / 3;
+    for (let k = 0; k < 2; k += 1) {
+      const a = spoke + (k * Math.PI) / 2;
       ctx.beginPath();
-      ctx.moveTo(Math.cos(a) * 8 * u, -118 * u + Math.sin(a) * 10 * u);
-      ctx.lineTo(Math.cos(a) * 30 * u, -118 * u + Math.sin(a) * 42 * u);
+      ctx.moveTo(Math.cos(a) * 4 * u, -62 * u + Math.sin(a) * 5 * u);
+      ctx.lineTo(Math.cos(a) * 13 * u, -62 * u + Math.sin(a) * 20 * u);
       ctx.stroke();
     }
-    // Tail: horizontal stabiliser (its trailing edge lifts with pitch,
-    // like an elevator) + fin with an amber flash.
-    const elev = -plane.pitch * 14 * u;
-    ctx.fillStyle = '#3d4a63';
-    ctx.beginPath();
-    ctx.moveTo(-58 * u, 78 * u + elev);
-    ctx.lineTo(58 * u, 78 * u + elev);
-    ctx.lineTo(44 * u, 96 * u);
-    ctx.lineTo(-44 * u, 96 * u);
-    ctx.closePath();
-    ctx.fill();
-    ctx.strokeStyle = 'rgba(30, 40, 60, 0.6)';
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(-52 * u, 84 * u + elev);
-    ctx.lineTo(52 * u, 84 * u + elev);
-    ctx.stroke();
-    ctx.fillStyle = '#46557a';
-    ctx.beginPath();
-    ctx.moveTo(-8 * u, 62 * u);
-    ctx.lineTo(10 * u, 62 * u);
-    ctx.lineTo(16 * u, 104 * u);
-    ctx.lineTo(-14 * u, 104 * u);
-    ctx.closePath();
-    ctx.fill();
-    ctx.fillStyle = '#ffb347';
-    ctx.beginPath();
-    ctx.moveTo(-8 * u, 66 * u);
-    ctx.lineTo(10 * u, 66 * u);
-    ctx.lineTo(12 * u, 78 * u);
-    ctx.lineTo(-10 * u, 78 * u);
-    ctx.closePath();
-    ctx.fill();
-    // Main wings with dihedral, flap lines and aileron seams.
-    ctx.fillStyle = '#5a6b8c';
-    ctx.beginPath();
-    ctx.moveTo(-26 * u, -18 * u);
-    ctx.lineTo(-148 * u, 26 * u);
-    ctx.lineTo(-140 * u, 44 * u);
-    ctx.lineTo(-20 * u, 22 * u);
-    ctx.closePath();
-    ctx.fill();
-    ctx.beginPath();
-    ctx.moveTo(26 * u, -18 * u);
-    ctx.lineTo(148 * u, 26 * u);
-    ctx.lineTo(140 * u, 44 * u);
-    ctx.lineTo(20 * u, 22 * u);
-    ctx.closePath();
-    ctx.fill();
-    ctx.fillStyle = '#6c7ea6';
-    ctx.beginPath();
-    ctx.moveTo(-26 * u, -18 * u);
-    ctx.lineTo(-148 * u, 26 * u);
-    ctx.lineTo(-146 * u, 32 * u);
-    ctx.lineTo(-24 * u, -10 * u);
-    ctx.closePath();
-    ctx.fill();
-    ctx.beginPath();
-    ctx.moveTo(26 * u, -18 * u);
-    ctx.lineTo(148 * u, 26 * u);
-    ctx.lineTo(146 * u, 32 * u);
-    ctx.lineTo(24 * u, -10 * u);
-    ctx.closePath();
-    ctx.fill();
-    ctx.strokeStyle = 'rgba(40, 50, 70, 0.55)';
-    ctx.lineWidth = 1;
+    // Main wings: wide, with perspective and dihedral — long tapered
+    // quads with a real chord, roots at the fuselage mid, tips slightly
+    // raised. The lowered wing shortens with the bank.
     for (const side of [-1, 1]) {
+      const L = side < 0 ? leftL : rightL;
+      ctx.fillStyle = '#5a6b8c';
       ctx.beginPath();
-      ctx.moveTo(side * 30 * u, -14 * u);
-      ctx.lineTo(side * 142 * u, 28 * u);
+      ctx.moveTo(side * 18 * u, -14 * u);
+      ctx.lineTo(side * 150 * L * u, -2 * u);
+      ctx.lineTo(side * 146 * L * u, 18 * u);
+      ctx.lineTo(side * 20 * u, 10 * u);
+      ctx.closePath();
+      ctx.fill();
+      // Sunlit leading-edge strip on top of the wing.
+      ctx.fillStyle = '#6c7ea6';
+      ctx.beginPath();
+      ctx.moveTo(side * 18 * u, -14 * u);
+      ctx.lineTo(side * 150 * L * u, -2 * u);
+      ctx.lineTo(side * 148 * L * u, 4 * u);
+      ctx.lineTo(side * 19 * u, -8 * u);
+      ctx.closePath();
+      ctx.fill();
+      // Flap line near the root, aileron gap near the tip.
+      ctx.strokeStyle = 'rgba(40, 50, 70, 0.55)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(side * 26 * u, -10 * u);
+      ctx.lineTo(side * 60 * L * u, -4 * u);
       ctx.stroke();
       ctx.beginPath();
-      ctx.moveTo(side * 34 * u, -4 * u);
-      ctx.lineTo(side * 138 * u, 36 * u);
+      ctx.moveTo(side * 112 * L * u, -1 * u);
+      ctx.lineTo(side * 144 * L * u, 12 * u);
       ctx.stroke();
     }
-    // Fuselage: tapered body, panel shading, amber storm-chaser stripe.
-    const body = ctx.createLinearGradient(-20 * u, 0, 20 * u, 0);
-    body.addColorStop(0, '#7c8aa8');
-    body.addColorStop(0.5, '#aeb9cf');
+    // Wingtip vortex wisps in a hard bank: faint white trails curling
+    // off the tips, the only visible air the plane leaves behind.
+    if (Math.abs(bank) > 0.45) {
+      ctx.save();
+      ctx.strokeStyle = 'rgba(235, 242, 252, 0.12)';
+      ctx.lineWidth = 4;
+      ctx.lineCap = 'round';
+      for (const side of [-1, 1]) {
+        const L = side < 0 ? leftL : rightL;
+        ctx.beginPath();
+        ctx.moveTo(side * 148 * L * u, 8 * u);
+        ctx.quadraticCurveTo(side * 168 * L * u, 30 * u, side * 158 * L * u, 58 * u);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+    // Fuselage: a short wedge receding into the screen — nose small and
+    // high (far), tail big and low (near the camera). Metallic shading:
+    // shadow on the left, pale top light, a warm sun-side highlight on
+    // the right (the sun is right of frame), dark belly at the tail.
+    const body = ctx.createLinearGradient(-18 * u, 0, 18 * u, 0);
+    body.addColorStop(0, '#6d7b9b');
+    body.addColorStop(0.35, '#aab6cd');
+    body.addColorStop(0.62, '#c9d2e4');
+    body.addColorStop(0.85, '#e6d3a8');
     body.addColorStop(1, '#5f6d8a');
     ctx.fillStyle = body;
     ctx.beginPath();
-    ctx.moveTo(0, -128 * u);
-    ctx.quadraticCurveTo(20 * u, -90 * u, 22 * u, -30 * u);
-    ctx.quadraticCurveTo(24 * u, 40 * u, 14 * u, 96 * u);
-    ctx.quadraticCurveTo(0, 110 * u, -14 * u, 96 * u);
-    ctx.quadraticCurveTo(-24 * u, 40 * u, -22 * u, -30 * u);
-    ctx.quadraticCurveTo(-20 * u, -90 * u, 0, -128 * u);
+    ctx.moveTo(0, -64 * u);
+    ctx.quadraticCurveTo(10 * u, -40 * u, 15 * u, -8 * u);
+    ctx.quadraticCurveTo(18 * u, 40 * u, 17 * u, 88 * u);
+    ctx.quadraticCurveTo(0, 98 * u, -17 * u, 88 * u);
+    ctx.quadraticCurveTo(-18 * u, 40 * u, -15 * u, -8 * u);
+    ctx.quadraticCurveTo(-10 * u, -40 * u, 0, -64 * u);
     ctx.fill();
-    // Amber stripe down the fuselage.
+    // Dark belly shade toward the tail, clipped to the fuselage.
+    ctx.save();
+    ctx.clip();
+    const belly = ctx.createLinearGradient(0, 30 * u, 0, 100 * u);
+    belly.addColorStop(0, 'rgba(20, 28, 46, 0)');
+    belly.addColorStop(1, 'rgba(20, 28, 46, 0.38)');
+    ctx.fillStyle = belly;
+    ctx.fillRect(-20 * u, 30 * u, 40 * u, 70 * u);
+    ctx.restore();
+    // Amber storm-chaser stripe down the top of the fuselage.
     ctx.fillStyle = '#ffb347';
     ctx.beginPath();
-    ctx.moveTo(-7 * u, -96 * u);
-    ctx.lineTo(7 * u, -96 * u);
-    ctx.lineTo(9 * u, 60 * u);
-    ctx.lineTo(-9 * u, 60 * u);
+    ctx.moveTo(-5 * u, -42 * u);
+    ctx.lineTo(5 * u, -42 * u);
+    ctx.lineTo(8 * u, 72 * u);
+    ctx.lineTo(-8 * u, 72 * u);
     ctx.closePath();
     ctx.fill();
     // Panel lines across the fuselage, longerons down each side, and
     // rivet dots along them: the skin reads as riveted metal, not paint.
+    // Widths follow the wedge, so the lines stay on the skin.
+    const widths = [[-30, 12], [0, 16], [30, 17], [60, 16]];
     ctx.strokeStyle = 'rgba(40, 50, 70, 0.55)';
     ctx.lineWidth = 1;
-    for (const yy of [-60, -20, 20, 60]) {
+    for (const [yy, hw] of widths) {
       ctx.beginPath();
-      ctx.moveTo(-20 * u, yy * u);
-      ctx.lineTo(20 * u, yy * u);
+      ctx.moveTo(-hw * u, yy * u);
+      ctx.lineTo(hw * u, yy * u);
       ctx.stroke();
     }
     ctx.strokeStyle = 'rgba(40, 50, 70, 0.4)';
     for (const side of [-1, 1]) {
       ctx.beginPath();
-      ctx.moveTo(side * 15 * u, -100 * u);
-      ctx.quadraticCurveTo(side * 19 * u, -30 * u, side * 17 * u, 40 * u);
-      ctx.quadraticCurveTo(side * 16 * u, 70 * u, side * 10 * u, 92 * u);
+      ctx.moveTo(side * 7 * u, -52 * u);
+      ctx.quadraticCurveTo(side * 13 * u, -10 * u, side * 14 * u, 40 * u);
+      ctx.quadraticCurveTo(side * 13 * u, 70 * u, side * 9 * u, 88 * u);
       ctx.stroke();
     }
     ctx.fillStyle = 'rgba(30, 40, 60, 0.7)';
-    for (const yy of [-60, -20, 20, 60]) {
-      for (const xx of [-14, -7, 7, 14]) {
+    for (const [yy, hw] of widths) {
+      for (const f of [-0.7, 0.7]) {
         ctx.beginPath();
-        ctx.arc(xx * u, yy * u, 1.1 * u, 0, Math.PI * 2);
+        ctx.arc(f * hw * u, yy * u, 1.1 * u, 0, Math.PI * 2);
         ctx.fill();
       }
     }
+    // Tail fin: a tall triangle rising from the tail over the fuselage,
+    // apex leaning slightly right (the 3/4 view), with an amber flash.
+    ctx.fillStyle = '#46557a';
+    ctx.beginPath();
+    ctx.moveTo(-11 * u, 76 * u);
+    ctx.lineTo(13 * u, 76 * u);
+    ctx.lineTo(5 * u, 20 * u);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = '#ffb347';
+    ctx.beginPath();
+    ctx.moveTo(-2 * u, 44 * u);
+    ctx.lineTo(8 * u, 44 * u);
+    ctx.lineTo(5 * u, 20 * u);
+    ctx.closePath();
+    ctx.fill();
+    // Horizontal stabiliser at the tail (near the camera, so it reads
+    // wide), its trailing edge lifting with pitch like an elevator.
+    const elev = -plane.pitch * 10 * u;
+    ctx.fillStyle = '#3d4a63';
+    ctx.beginPath();
+    ctx.moveTo(-8 * u, 72 * u + elev);
+    ctx.lineTo(-58 * u, 84 * u + elev);
+    ctx.lineTo(-54 * u, 96 * u);
+    ctx.lineTo(-6 * u, 88 * u);
+    ctx.closePath();
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(8 * u, 72 * u + elev);
+    ctx.lineTo(58 * u, 84 * u + elev);
+    ctx.lineTo(54 * u, 96 * u);
+    ctx.lineTo(6 * u, 88 * u);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(30, 40, 60, 0.6)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(-52 * u, 88 * u + elev);
+    ctx.lineTo(52 * u, 88 * u + elev);
+    ctx.stroke();
     // Canopy with a sky reflection: pale blue at the top fading to deep
-    // navy, plus a diagonal glint streak.
-    const canopy = ctx.createLinearGradient(0, -84 * u, 0, -32 * u);
+    // navy, plus a diagonal glint streak and a dark frame.
+    const canopy = ctx.createLinearGradient(0, -48 * u, 0, -16 * u);
     canopy.addColorStop(0, '#9db8dd');
     canopy.addColorStop(0.45, '#4a6a94');
     canopy.addColorStop(1, '#16233c');
     ctx.fillStyle = canopy;
     ctx.beginPath();
-    ctx.ellipse(0, -58 * u, 13 * u, 26 * u, 0, 0, Math.PI * 2);
+    ctx.ellipse(0, -32 * u, 11 * u, 17 * u, 0, 0, Math.PI * 2);
     ctx.fill();
+    ctx.strokeStyle = 'rgba(20, 28, 46, 0.8)';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
     ctx.strokeStyle = 'rgba(255,255,255,0.85)';
-    ctx.lineWidth = 2.5;
+    ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.moveTo(-6 * u, -72 * u);
-    ctx.lineTo(2 * u, -48 * u);
+    ctx.moveTo(-5 * u, -42 * u);
+    ctx.lineTo(2 * u, -24 * u);
     ctx.stroke();
     ctx.fillStyle = 'rgba(255,255,255,0.75)';
     ctx.beginPath();
-    ctx.ellipse(-4 * u, -66 * u, 4 * u, 10 * u, -0.3, 0, Math.PI * 2);
+    ctx.ellipse(-3 * u, -38 * u, 3.5 * u, 7 * u, -0.3, 0, Math.PI * 2);
     ctx.fill();
-    // SR-7 marking.
+    // SR-7 stencil on the tail of the fuselage.
     ctx.fillStyle = '#20293d';
-    ctx.font = `bold ${17 * u}px system-ui, sans-serif`;
+    ctx.font = `bold ${15 * u}px system-ui, sans-serif`;
     ctx.textAlign = 'center';
-    ctx.fillText('SR-7', 0, 34 * u);
-    // Nose cone + spinner.
+    ctx.fillText('SR-7', 0, 54 * u);
+    // Spinner cone at the nose tip, over the prop disc.
     ctx.fillStyle = '#2c3850';
     ctx.beginPath();
-    ctx.ellipse(0, -124 * u, 9 * u, 10 * u, 0, 0, Math.PI * 2);
+    ctx.ellipse(0, -60 * u, 6 * u, 7 * u, 0, 0, Math.PI * 2);
     ctx.fill();
-    // Navigation lights with glow halos.
+    // Navigation lights with glow halos: red left, green right, white
+    // tail strobe, at the wingtips of the new wing geometry.
     const blink = 0.5 + 0.5 * Math.sin(time * 6);
     ctx.save();
-    ctx.shadowBlur = 14;
+    ctx.shadowBlur = 12;
     ctx.shadowColor = '#ff3c3c';
     ctx.fillStyle = `rgba(255, 60, 60, ${0.6 + 0.4 * blink})`;
     ctx.beginPath();
-    ctx.arc(-146 * u, 34 * u, 5 * u, 0, Math.PI * 2);
+    ctx.arc(-148 * leftL * u, 8 * u, 5 * u, 0, Math.PI * 2);
     ctx.fill();
     ctx.shadowColor = '#50ff78';
     ctx.fillStyle = `rgba(80, 255, 120, ${0.6 + 0.4 * blink})`;
     ctx.beginPath();
-    ctx.arc(146 * u, 34 * u, 5 * u, 0, Math.PI * 2);
+    ctx.arc(148 * rightL * u, 8 * u, 5 * u, 0, Math.PI * 2);
     ctx.fill();
     ctx.shadowColor = '#fff';
     ctx.fillStyle = '#fff';
     ctx.beginPath();
-    ctx.arc(0, 102 * u, 4 * u, 0, Math.PI * 2);
+    ctx.arc(0, 96 * u, 4 * u, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
-    // Landing gear when down.
+    // Landing gear when down: struts and wheels under the tail.
     if (plane.gearDown) {
       ctx.fillStyle = '#1c2434';
-      ctx.fillRect(-16 * u, 96 * u, 7 * u, 16 * u);
-      ctx.fillRect(9 * u, 96 * u, 7 * u, 16 * u);
+      ctx.fillRect(-15 * u, 90 * u, 4 * u, 18 * u);
+      ctx.fillRect(11 * u, 90 * u, 4 * u, 18 * u);
       ctx.beginPath();
-      ctx.arc(-12 * u, 116 * u, 6 * u, 0, Math.PI * 2);
-      ctx.arc(12 * u, 116 * u, 6 * u, 0, Math.PI * 2);
+      ctx.arc(-13 * u, 112 * u, 6 * u, 0, Math.PI * 2);
+      ctx.arc(13 * u, 112 * u, 6 * u, 0, Math.PI * 2);
       ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  // ---- speed streaks ------------------------------------------------------
+  // Subtle radial streaks near the frame edges that strengthen with
+  // airspeed: the still frame has to imply forward motion. Deterministic
+  // angles, slowly drifting, so they never shimmer between frames.
+  function drawSpeedStreaks(plane, time) {
+    const speed = plane ? plane.speed : 0;
+    const f = Math.max(0, Math.min(1, (speed - 35) / 55));
+    if (f <= 0) return;
+    ctx.save();
+    ctx.strokeStyle = `rgba(225, 235, 248, ${0.16 * f})`;
+    ctx.lineWidth = 1.5;
+    ctx.lineCap = 'round';
+    for (let i = 0; i < 14; i += 1) {
+      const a = i * 2.39996 + time * 0.03;
+      const r0 = 330 + (i % 3) * 46;
+      const len = 10 + f * 26 + (i % 4) * 4;
+      const x0 = CX + Math.cos(a) * r0;
+      const y0 = CY + Math.sin(a) * r0 * 0.62;
+      const x1 = CX + Math.cos(a) * (r0 + len);
+      const y1 = CY + Math.sin(a) * (r0 + len) * 0.62;
+      ctx.beginPath();
+      ctx.moveTo(x0, y0);
+      ctx.lineTo(x1, y1);
+      ctx.stroke();
     }
     ctx.restore();
   }
@@ -683,7 +935,7 @@ export function createRenderer(canvas) {
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
     // Top-left instruments.
-    ctx.fillStyle = 'rgba(8, 12, 22, 0.72)';
+    ctx.fillStyle = 'rgba(8, 12, 22, 0.82)';
     ctx.fillRect(18, 16, 250, 96);
     ctx.strokeStyle = 'rgba(255, 179, 71, 0.9)';
     ctx.lineWidth = 2;
@@ -699,7 +951,7 @@ export function createRenderer(canvas) {
     ctx.fillText(`${spdKt} kt`, 92, 50);
     ctx.fillText(`${vsi >= 0 ? '+' : ''}${vsi} fpm`, 92, 80);
     // Top-right compass strip.
-    ctx.fillStyle = 'rgba(8, 12, 22, 0.72)';
+    ctx.fillStyle = 'rgba(8, 12, 22, 0.82)';
     ctx.fillRect(W - 268, 16, 250, 64);
     ctx.strokeStyle = 'rgba(255, 179, 71, 0.9)';
     ctx.strokeRect(W - 268, 16, 250, 64);
@@ -721,7 +973,7 @@ export function createRenderer(canvas) {
       const text = missionObjectiveText(mission);
       ctx.font = 'bold 19px system-ui, sans-serif';
       const tw = ctx.measureText(text).width + 36;
-      ctx.fillStyle = 'rgba(8, 12, 22, 0.78)';
+      ctx.fillStyle = 'rgba(8, 12, 22, 0.82)';
       ctx.fillRect(CX - tw / 2, 16, tw, 40);
       ctx.strokeStyle = 'rgba(255, 179, 71, 0.9)';
       ctx.strokeRect(CX - tw / 2, 16, tw, 40);
@@ -1011,9 +1263,11 @@ export function createRenderer(canvas) {
       z: plane.z - fz * 42,
       yaw: plane.heading,
       pitch: -0.10 - plane.pitch * 0.35,
-      roll: plane.bank * 0.35,
+      roll: plane.bank * 0.55,
     };
-    const project = drawTerrain(terrain, cam, region, flash);
+    const project = drawTerrain(terrain, cam, region, flash, storm);
+    drawCloudShadows(project, weather);
+    drawFoam(project, terrain);
     drawClouds(project, weather, time, flash);
     drawStrip(terrain, project, region.strip, flash, hazeRgb(region));
     if (mission) {
@@ -1090,6 +1344,7 @@ export function createRenderer(canvas) {
     // camera locked to the airframe; the world moves around it.
     drawPlane(plane, { x: CX, y: H * 0.66 }, time);
     drawRain(storm, time, plane);
+    drawSpeedStreaks(plane, time);
     // Lightning light, second half: a radial wash centred on the bolt
     // plus a faint whole-frame lift, drawn over the world (terrain,
     // clouds, plane) but under the HUD, so the strike lights the scene
