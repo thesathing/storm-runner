@@ -93,25 +93,33 @@ export function createTerrain(seed) {
   // height drop across the cell divided by its size, 0 on flat ground.
   // Water is textured too: layered noise gives wave facets instead of a
   // solid sheet, and the renderer adds sun glitter on top.
+  // Realism pass: softer noise (low amplitude, broad patches dominate)
+  // so facets blend instead of reading as a grid, a deeper blue-green
+  // ocean, and a land palette a real coastline has from the air:
+  // warm sand, muted green lowland, darker forest, brown rock, grey
+  // cliff on steep faces.
   function colour(x, z, h, slope) {
     const n1 = rng.noise2(x * 0.004 + 7, z * 0.004 - 3); // broad patches
     const n2 = rng.noise2(x * 0.021 - 11, z * 0.021 + 5); // fine grain
-    const v = 1 + n1 * 0.14 + n2 * 0.09;
+    const v = 1 + n1 * 0.08 + n2 * 0.04;
     let base;
     if (h <= 1.5) {
-      // Sea: deep teal with slow wave variation, never one flat colour.
+      // Sea: deep blue-green, darker with slow wave variation, never
+      // one flat colour. The renderer fogs it pale toward the horizon.
       const w = 0.5 + 0.5 * rng.noise2(x * 0.009 + 31, z * 0.009 - 19);
-      base = [14 + w * 10, 82 + w * 26, 80 + w * 22];
+      base = [10 + w * 8, 62 + w * 18, 72 + w * 16];
     } else if (h <= 6) {
-      base = [201, 168, 106]; // sand beach ring
+      base = [208, 178, 120]; // warm sand beach ring
+    } else if (h <= 30) {
+      base = [58 + n1 * 10, 100 + n1 * 12, 52 + n2 * 8]; // green lowland
     } else if (h <= 55) {
-      base = [66 + n1 * 14, 118 + n1 * 16, 58 + n2 * 10]; // grass
+      base = [46 + n1 * 9, 84 + n1 * 10, 46 + n2 * 7]; // darker forest
     } else if (h <= 120) {
-      base = [104 + n1 * 12, 96 + n2 * 10, 58]; // dry hills
+      base = [94 + n1 * 11, 84 + n2 * 9, 56]; // dry brown hills
     } else if (h <= 175) {
-      base = [102 + n1 * 10, 106 + n2 * 8, 112]; // rock
+      base = [100 + n1 * 9, 104 + n2 * 7, 110]; // rock
     } else {
-      base = [138 + n1 * 10, 142 + n2 * 8, 150]; // high grey
+      base = [132 + n1 * 9, 136 + n2 * 7, 144]; // high grey
     }
     // Cliff shading: steep faces go dark and desaturated.
     const cliff = Math.max(0, Math.min(1, (slope - 0.45) / 0.6));
