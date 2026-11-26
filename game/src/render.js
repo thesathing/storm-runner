@@ -137,10 +137,14 @@ export function createRenderer(canvas) {
     for (let i = 0; i < 4; i += 1) {
       const bx = ((i * 521 + time * 6) % (W + 560)) - 280;
       const by = H * 0.40 + (i % 3) * 30;
+      // Two extra satellite puffs riding higher break the flat
+      // ellipse silhouette into an irregular cloud top.
       const puffs = [
         { dx: -70, dy: 6, rx: 120, ry: 26 },
         { dx: 0, dy: -8, rx: 150, ry: 32 },
         { dx: 80, dy: 8, rx: 110, ry: 24 },
+        { dx: -30, dy: -24, rx: 70, ry: 18 },
+        { dx: 45, dy: -22, rx: 80, ry: 20 },
       ];
       for (const p of puffs) {
         softBlob(bx + p.dx, by + p.dy + p.ry * 0.3, p.rx, p.ry, [16, 22, 38], 0.85);
@@ -198,7 +202,10 @@ export function createRenderer(canvas) {
       const p01 = project(q.x0, Math.max(q.h01, 0), q.z1);
       if (!p00 || !p10 || !p11 || !p01) continue;
       const dist = Math.sqrt(q.depth);
-      const fog = fogFactor(dist);
+      let fog = fogFactor(dist);
+      // Mountains sit deeper in the atmosphere than the sea at the
+      // same distance: haze their faces a little more.
+      fog = Math.min(0.9, fog + Math.max(0, (q.hm - 80) / 120) * 0.30);
       // Textured facet colour, fogged toward the horizon haze, then lit
       // by the lightning lift (a cool-white lift, stronger on the flash).
       let rgb = terrain.colour(q.x0, q.z0, q.hm, q.slope);
@@ -214,8 +221,11 @@ export function createRenderer(canvas) {
       ctx.fill();
       // Stroke every quad in its own fill colour: anti-aliasing leaves
       // hairline gaps between neighbouring quads, and the sky showing
-      // through those gaps is what read as a hard grid. The stroke
-      // closes the seams without changing the colours.
+      // through those gaps reads as a fine grid. Removing the stroke
+      // from the sea (tried first) made exactly that fine grid appear
+      // — the gaps, not the colours, were drawing it. Now that the sea
+      // colour field is smooth (neighbours differ by ~1%), the stroke
+      // in the quad's own colour is invisible and the gaps are closed.
       ctx.strokeStyle = css(rgb);
       ctx.lineWidth = 1.2;
       ctx.stroke();
@@ -246,6 +256,21 @@ export function createRenderer(canvas) {
           ctx.fill();
         }
       }
+    }
+    // Swell shading: a few huge, very faint soft patches anchored to
+    // the focus point, so they move with the sea instead of sitting on
+    // the screen. They break any residual quad regularity with broad
+    // light and shadow, like real swell, at an alpha too low to read
+    // as painted marks.
+    for (let i = 0; i < 12; i += 1) {
+      const wx = focusX + ((i * 733 + 211) % 2400) - 1200;
+      const wz = focusZ + ((i * 521 + 137) % 1800) - 300;
+      const sp2 = project(wx, 0, wz);
+      if (!sp2 || sp2.depth < 40) continue;
+      const rx = 320 * sp2.s;
+      if (rx < 20) continue;
+      const lite = i % 2 === 0;
+      softBlob(sp2.x, sp2.y, rx, rx * 0.28, lite ? [52, 128, 138] : [6, 44, 56], 0.05 * (1 - fogFactor(sp2.depth)));
     }
     return project;
   }
@@ -643,7 +668,11 @@ export function createRenderer(canvas) {
   // horizon the other way, so a bank reads as a roll, not a spinning
   // cardboard cutout.
   function drawPlane(plane, screenPos, time) {
-    const S = 300; // sprite width in px
+    // Big in frame (criterion 2): 1.7x the v3 toy size. The chase 3/4
+    // perspective is unchanged — fuselage receding into the screen,
+    // never a vertical dart — and at this size the detail (canopy,
+    // panels, rivets, fin, prop blur, nav lights) finally reads.
+    const S = 510; // sprite width in px
     const bank = plane.bank;
     const px = screenPos.x;
     const py = screenPos.y - plane.pitch * 60;
@@ -657,11 +686,16 @@ export function createRenderer(canvas) {
     // the raised wing lengthens.
     const leftL = Math.max(0.7, Math.min(1.3, 1 + bank * 0.22));
     const rightL = Math.max(0.7, Math.min(1.3, 1 - bank * 0.22));
-    // Prop: a small translucent blurred disc at the nose only, no rim
-    // ring, faint spokes turning with time. Never a halo.
+    // Prop: a translucent blurred disc at the nose only, no rim ring,
+    // faint spokes turning with time. Never a halo. Two discs — a wide
+    // faint one and a denser core — so it reads as spinning blur.
+    ctx.fillStyle = 'rgba(220, 228, 240, 0.07)';
+    ctx.beginPath();
+    ctx.ellipse(0, -62 * u, 26 * u, 36 * u, 0, 0, Math.PI * 2);
+    ctx.fill();
     ctx.fillStyle = 'rgba(220, 228, 240, 0.16)';
     ctx.beginPath();
-    ctx.ellipse(0, -62 * u, 15 * u, 22 * u, 0, 0, Math.PI * 2);
+    ctx.ellipse(0, -62 * u, 21 * u, 30 * u, 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.strokeStyle = 'rgba(240,244,250,0.14)';
     ctx.lineWidth = 2;
@@ -669,20 +703,23 @@ export function createRenderer(canvas) {
     for (let k = 0; k < 2; k += 1) {
       const a = spoke + (k * Math.PI) / 2;
       ctx.beginPath();
-      ctx.moveTo(Math.cos(a) * 4 * u, -62 * u + Math.sin(a) * 5 * u);
-      ctx.lineTo(Math.cos(a) * 13 * u, -62 * u + Math.sin(a) * 20 * u);
+      ctx.moveTo(Math.cos(a) * 5 * u, -62 * u + Math.sin(a) * 7 * u);
+      ctx.lineTo(Math.cos(a) * 18 * u, -62 * u + Math.sin(a) * 27 * u);
       ctx.stroke();
     }
     // Main wings: wide, with perspective and dihedral — long tapered
     // quads with a real chord, roots at the fuselage mid, tips slightly
-    // raised. The lowered wing shortens with the bank.
+    // raised. The lowered wing shortens with the bank. The tip chord
+    // is clearly shorter than the root chord, and a dark tip cap
+    // closes it, so the wingtip is a tapered point, not a flat
+    // rectangle edge.
     for (const side of [-1, 1]) {
       const L = side < 0 ? leftL : rightL;
       ctx.fillStyle = '#5a6b8c';
       ctx.beginPath();
       ctx.moveTo(side * 18 * u, -14 * u);
-      ctx.lineTo(side * 150 * L * u, -2 * u);
-      ctx.lineTo(side * 146 * L * u, 18 * u);
+      ctx.lineTo(side * 150 * L * u, -6 * u);
+      ctx.lineTo(side * 146 * L * u, 12 * u);
       ctx.lineTo(side * 20 * u, 10 * u);
       ctx.closePath();
       ctx.fill();
@@ -690,9 +727,18 @@ export function createRenderer(canvas) {
       ctx.fillStyle = '#6c7ea6';
       ctx.beginPath();
       ctx.moveTo(side * 18 * u, -14 * u);
-      ctx.lineTo(side * 150 * L * u, -2 * u);
-      ctx.lineTo(side * 148 * L * u, 4 * u);
+      ctx.lineTo(side * 150 * L * u, -6 * u);
+      ctx.lineTo(side * 147 * L * u, 0 * u);
       ctx.lineTo(side * 19 * u, -8 * u);
+      ctx.closePath();
+      ctx.fill();
+      // Dark tapered tip cap.
+      ctx.fillStyle = '#42506e';
+      ctx.beginPath();
+      ctx.moveTo(side * 138 * L * u, -4 * u);
+      ctx.lineTo(side * 150 * L * u, -6 * u);
+      ctx.lineTo(side * 146 * L * u, 12 * u);
+      ctx.lineTo(side * 138 * L * u, 10 * u);
       ctx.closePath();
       ctx.fill();
       // Flap line near the root, aileron gap near the tip.
@@ -763,7 +809,7 @@ export function createRenderer(canvas) {
     // Panel lines across the fuselage, longerons down each side, and
     // rivet dots along them: the skin reads as riveted metal, not paint.
     // Widths follow the wedge, so the lines stay on the skin.
-    const widths = [[-30, 12], [0, 16], [30, 17], [60, 16]];
+    const widths = [[-30, 12], [-10, 14], [0, 16], [30, 17], [45, 17], [60, 16]];
     ctx.strokeStyle = 'rgba(40, 50, 70, 0.55)';
     ctx.lineWidth = 1;
     for (const [yy, hw] of widths) {
@@ -847,6 +893,14 @@ export function createRenderer(canvas) {
     ctx.moveTo(-5 * u, -42 * u);
     ctx.lineTo(2 * u, -24 * u);
     ctx.stroke();
+    // Canopy frame crossbar: the canopy reads as framed glass, not a
+    // painted oval.
+    ctx.strokeStyle = 'rgba(20, 28, 46, 0.7)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(-10 * u, -32 * u);
+    ctx.lineTo(10 * u, -32 * u);
+    ctx.stroke();
     ctx.fillStyle = 'rgba(255,255,255,0.75)';
     ctx.beginPath();
     ctx.ellipse(-3 * u, -38 * u, 3.5 * u, 7 * u, -0.3, 0, Math.PI * 2);
@@ -865,7 +919,7 @@ export function createRenderer(canvas) {
     // tail strobe, at the wingtips of the new wing geometry.
     const blink = 0.5 + 0.5 * Math.sin(time * 6);
     ctx.save();
-    ctx.shadowBlur = 12;
+    ctx.shadowBlur = 16;
     ctx.shadowColor = '#ff3c3c';
     ctx.fillStyle = `rgba(255, 60, 60, ${0.6 + 0.4 * blink})`;
     ctx.beginPath();
