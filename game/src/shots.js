@@ -16,16 +16,18 @@ function bearingTo(plane, target) {
 }
 
 // A deterministic lightning bolt ahead-right of the plane, for the cover
-// frame: short, tight, from a cloud base down to the ground.
+// frame: short, tight, from a cloud base down to the ground. The channel
+// zigzags hard (±70 m per step): a near-straight line smoothed by the
+// Catmull-Rom tube reads as a white ribbon, not lightning.
 function stagedBolt(rng, plane, fx, fz, rx, rz) {
   const bx = plane.x + fx * 480 + rx * 200;
   const bz = plane.z + fz * 480 + rz * 200;
   const pts = [{ x: bx, y: 430, z: bz }];
   let px = bx;
   let pz = bz;
-  for (let y = 360; y > 0; y -= 70) {
-    px += rng.range(-28, 28);
-    pz += rng.range(-28, 28);
+  for (let y = 360; y > 0; y -= 55) {
+    px += rng.range(-70, 70);
+    pz += rng.range(-70, 70);
     pts.push({ x: px, y, z: pz });
   }
   pts.push({ x: px, y: 0, z: pz });
@@ -118,9 +120,12 @@ export function stageShot(name) {
     const world = buildWorld(2, 'M3', 77, {});
     // Fly through the first rings inside the storm, then compose the
     // frame with the next ring ahead and a bolt to the left, banking
-    // INTO the ring.
+    // INTO the ring. Bank stays ~29 deg: a hard bank was tried and
+    // reverted — the chase camera rolls with the plane, so past ~0.6
+    // the wings go vertical, the wingtips leave the frame and the
+    // plane reads as a white stick, not a plane.
     flyToward(world, 26);
-    composeAhead(world, 300, -1, 0.5);
+    composeAhead(world, 300, 1, 0.5);
     return { screen: 'play', save: blankSave(), world };
   }
 
@@ -175,7 +180,9 @@ export function stageShot(name) {
   const { plane } = world;
   plane.throttle = 0.78;
   flyToward(world, 20);
-  // Gentle ~20 degree bank through the ring, level flight.
+  // Gentle ~20 degree bank through the ring, level flight. (A hard
+  // bank was tried and reverted: it turned the plane into a vertical
+  // stick — see the rings shot's note.)
   composeAhead(world, 320, 1, 0.35);
   world.target = currentTarget(world.mission);
   return { screen: 'play', save: blankSave(), world };
