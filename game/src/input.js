@@ -9,6 +9,7 @@ export function createInput(canvas) {
   const ACTION_PAUSE = 2;
   const ACTION_GEAR = 4;
   const ACTION_DROP = 8;
+  const ACTION_CAMERA = 16;
 
   function onKeyDown(e) {
     if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.key)) e.preventDefault();
@@ -18,6 +19,7 @@ export function createInput(canvas) {
     if (e.key.toLowerCase() === 'p' || e.key === 'Escape') actions |= ACTION_PAUSE;
     if (e.key.toLowerCase() === 'g') actions |= ACTION_GEAR;
     if (e.key.toLowerCase() === 'c') actions |= ACTION_DROP;
+    if (e.key.toLowerCase() === 'v') actions |= ACTION_CAMERA;
   }
   function onKeyUp(e) {
     keys.delete(e.key.toLowerCase());
@@ -70,5 +72,5 @@ export function createInput(canvas) {
 
   function hover() { return { x: mouse.x, y: mouse.y }; }
 
-  return { read, takeActions, takeClick, hover, ACTION_CONFIRM, ACTION_PAUSE, ACTION_GEAR, ACTION_DROP };
+  return { read, takeActions, takeClick, hover, ACTION_CONFIRM, ACTION_PAUSE, ACTION_GEAR, ACTION_DROP, ACTION_CAMERA };
 }
