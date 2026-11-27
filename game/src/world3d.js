@@ -64,11 +64,11 @@ export function createWorld3D(glCanvas) {
   // prop blur disc + amber exhaust shimmer. No twin tails, no jet flames.
   function buildPlaneModel() {
     const group = new THREE.Group();
-    const metal = new THREE.MeshLambertMaterial({ color: 0xaab6cd, flatShading: true });
-    const wingMat = new THREE.MeshLambertMaterial({ color: 0x5a6b8c, flatShading: true });
-    const wingTop = new THREE.MeshLambertMaterial({ color: 0x6c7ea6, flatShading: true });
-    const darkMat = new THREE.MeshLambertMaterial({ color: 0x3d4a63, flatShading: true });
-    const finMat = new THREE.MeshLambertMaterial({ color: 0x46557a, flatShading: true });
+    const metal = new THREE.MeshLambertMaterial({ color: 0xc6d2e4, flatShading: true });
+    const wingMat = new THREE.MeshLambertMaterial({ color: 0x7e90b8, flatShading: true });
+    const wingTop = new THREE.MeshLambertMaterial({ color: 0x8ba0c6, flatShading: true });
+    const darkMat = new THREE.MeshLambertMaterial({ color: 0x5b6a8c, flatShading: true });
+    const finMat = new THREE.MeshLambertMaterial({ color: 0x64749e, flatShading: true });
     const amberMat = new THREE.MeshLambertMaterial({ color: 0xffb347, flatShading: true });
     const canopyMat = new THREE.MeshPhongMaterial({ color: 0x4a6a94, shininess: 120, specular: 0xaac4e8 });
     // Fuselage: tapered cylinder along +Z (nose +Z), nose cone, tail cone.
@@ -142,7 +142,7 @@ export function createWorld3D(glCanvas) {
     group.add(disc);
     const prop = new THREE.Group();
     prop.position.z = 5.32;
-    const bladeMat = new THREE.MeshLambertMaterial({ color: 0x2c3850 });
+    const bladeMat = new THREE.MeshLambertMaterial({ color: 0x46536e });
     for (let k = 0; k < 2; k += 1) {
       const blade = new THREE.Mesh(new THREE.BoxGeometry(0.2, 3.1, 0.08), bladeMat);
       blade.rotation.z = (k * Math.PI) / 2;
@@ -166,7 +166,7 @@ export function createWorld3D(glCanvas) {
     }
     // Landing gear (shown when down): struts + wheels.
     const gear = new THREE.Group();
-    const strutMat = new THREE.MeshLambertMaterial({ color: 0x1c2434 });
+    const strutMat = new THREE.MeshLambertMaterial({ color: 0x333e52 });
     for (const side of [-1, 1]) {
       const strut = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 1.1, 6), strutMat);
       strut.position.set(side * 0.7, -0.95, 1.2);
@@ -254,11 +254,17 @@ export function createWorld3D(glCanvas) {
     const haze = parseHex(region.sky[2]);
     sc.fog = new THREE.Fog(new THREE.Color(haze[0] / 255, haze[1] / 255, haze[2] / 255), 900, 4200);
 
-    const hemi = new THREE.HemisphereLight(0xbfd0e8, 0x4a5548, 1.15);
+    const hemi = new THREE.HemisphereLight(0xbfd0e8, 0x4a5548, 1.3);
     sc.add(hemi);
     const sun = new THREE.DirectionalLight(0xffd9a0, 1.7);
     sc.add(sun);
     sc.add(sun.target);
+    // Fill light from behind the plane (opposite the sun): the chase
+    // camera looks at the plane's shadow side, so without it the SR-7
+    // reads as a near-black silhouette. Sun position/direction untouched.
+    const fill = new THREE.DirectionalLight(0xcfd9ee, 0.5);
+    sc.add(fill);
+    sc.add(fill.target);
 
     const sky = makeSky(region);
     sc.add(sky.dome);
@@ -452,10 +458,15 @@ export function createWorld3D(glCanvas) {
     }
 
     // Storm clouds: instanced flattened icosahedron puffs, one cluster
-    // per weather cell plus a distant ambient bank. Rain shafts under
-    // heavy cells, dark cloud shadows on the sea below them.
+    // per weather cell plus a distant ambient bank. Smooth shading +
+    // a small emissive lift: flat-shaded dark facets are what made
+    // single puffs read as grey rocks. Rain shafts under heavy cells,
+    // dark cloud shadows on the sea below them.
     const puffGeo = new THREE.IcosahedronGeometry(1, 1);
-    const puffMat = new THREE.MeshLambertMaterial({ color: 0xffffff, flatShading: true });
+    const puffMat = new THREE.MeshLambertMaterial({
+      color: 0xffffff, flatShading: false,
+      emissive: 0x3d4658, emissiveIntensity: 1,
+    });
     const puffs = [];
     for (const cell of weather.cells) {
       const defs = [
@@ -468,8 +479,8 @@ export function createWorld3D(glCanvas) {
       ];
       for (const [dx, dy, r, light] of defs) {
         puffs.push({
-          x: cell.x + dx * cell.r * 0.7, y: cell.base + 80 + dy * cell.r * 0.4, z: cell.z + dx * cell.r * 0.18,
-          sx: cell.r * r * 0.24, sy: cell.r * r * 0.5, sz: cell.r * r * 0.45, light,
+          x: cell.x + dx * cell.r * 0.9, y: cell.base + 80 + dy * cell.r * 0.35, z: cell.z + dx * cell.r * 0.18,
+          sx: cell.r * r * 0.36, sy: cell.r * r * 0.28, sz: cell.r * r * 0.5, light,
           top: dy >= 0.08 ? 1 : dy <= -0.08 ? 0 : 0.5,
         });
       }
@@ -483,19 +494,46 @@ export function createWorld3D(glCanvas) {
       const cx = Math.cos(a) * r;
       const cz = Math.sin(a) * r;
       const cy = 430 + (i % 4) * 70;
-      for (let j = 0; j < 6; j += 1) {
-        const ox = (((i * 7 + j * 37) % 100) - 50);
+      for (let j = 0; j < 8; j += 1) {
+        const ox = (((i * 7 + j * 37) % 60) - 30);
         const oy = (((i * 5 + j * 53) % 60) - 15);
-        const oz = (((i * 3 + j * 29) % 80) - 40);
+        const oz = (((i * 3 + j * 29) % 50) - 25);
         const sz = 55 + ((i * 7 + j * 13) % 45);
         puffs.push({
           x: cx + ox, y: cy + oy, z: cz + oz,
-          sx: sz, sy: sz * 0.7, sz: sz * 0.65, light: 0.5, top: oy > 10 ? 1 : 0.5,
+          sx: sz, sy: sz * 0.55, sz: sz * 0.8, light: 0.5, top: oy > 10 ? 1 : 0.5,
         });
       }
     }
-    const cloudMesh = new THREE.InstancedMesh(puffGeo, puffMat, puffs.length);
-    puffs.forEach((p, i) => {
+    // Keep the sight line to each ring clear: no puff may sit in the
+    // corridor from the plane to a ring, or a cloud reads as a rock
+    // inside the ring (the cover shot's worst lie). Cosmetic only —
+    // clouds never affect flight, missions or collision.
+    const ringCorridor = [];
+    if (world.mission && world.mission.rings) {
+      const px = world.plane.x, py = world.plane.y, pz = world.plane.z;
+      for (const ring of world.mission.rings) {
+        const dx = ring.x - px, dy = ring.y - py, dz = ring.z - pz;
+        const len = Math.hypot(dx, dy, dz) || 1;
+        ringCorridor.push({ px, py, pz, dx: dx / len, dy: dy / len, dz: dz / len });
+      }
+    }
+    function inRingCorridor(x, y, z) {
+      for (const c of ringCorridor) {
+        const vx = x - c.px, vy = y - c.py, vz = z - c.pz;
+        const t = vx * c.dx + vy * c.dy + vz * c.dz;
+        // Out to 8000 m: the distant ambient bank sits 3700–4500 m
+        // out, and a far puff on the ray still projects inside a ring.
+        if (t < 0 || t > 8000) continue;
+        const cx = c.px + c.dx * t, cy = c.py + c.dy * t, cz = c.pz + c.dz * t;
+        const d2 = (x - cx) * (x - cx) + (y - cy) * (y - cy) + (z - cz) * (z - cz);
+        if (d2 < 200 * 200) return true;
+      }
+      return false;
+    }
+    const visiblePuffs = puffs.filter((p) => !inRingCorridor(p.x, p.y, p.z));
+    const cloudMesh = new THREE.InstancedMesh(puffGeo, puffMat, visiblePuffs.length);
+    visiblePuffs.forEach((p, i) => {
       q.identity();
       p3.set(p.x, p.y, p.z);
       sc3.set(p.sx, p.sy, p.sz);
@@ -506,10 +544,11 @@ export function createWorld3D(glCanvas) {
         // Sunlit top: near-white blue, so the cluster reads as cloud.
         cloudMesh.setColorAt(i, col.setRGB(0.74 + l * 0.2, 0.78 + l * 0.18, 0.88 + l * 0.1));
       } else if (p.top === 0) {
-        // Dark storm belly underneath (lifted so it never reads black).
-        cloudMesh.setColorAt(i, col.setRGB(0.2 + l * 0.12, 0.22 + l * 0.12, 0.3 + l * 0.14));
+        // Storm belly underneath: mid grey-blue, lifted so it never
+        // reads as a dark rock (the old 0.2 floor was the boulder look).
+        cloudMesh.setColorAt(i, col.setRGB(0.42 + l * 0.14, 0.45 + l * 0.14, 0.54 + l * 0.14));
       } else {
-        cloudMesh.setColorAt(i, col.setRGB(0.42 + l * 0.3, 0.45 + l * 0.3, 0.55 + l * 0.3));
+        cloudMesh.setColorAt(i, col.setRGB(0.58 + l * 0.26, 0.61 + l * 0.24, 0.7 + l * 0.2));
       }
     });
     cloudMesh.instanceMatrix.needsUpdate = true;
@@ -617,7 +656,7 @@ export function createWorld3D(glCanvas) {
     const camera = new THREE.PerspectiveCamera(55, W / H, 0.5, 12000);
     sc.add(camera);
     return {
-      scene: sc, hemi, sun, sky, sunSprite, planeParts, blob, trailSprites,
+      scene: sc, hemi, sun, fill, sky, sunSprite, planeParts, blob, trailSprites,
       ringMeshes, camera, terrain, weather, region,
     };
   }
@@ -649,16 +688,49 @@ export function createWorld3D(glCanvas) {
     const pts = bolt.points.map((p) => new THREE.Vector3(p.x, p.y, p.z));
     const curve = new THREE.CatmullRomCurve3(pts);
     boltMesh = new THREE.Group();
+    // Thick core + wide glow: at 400–600 m a 1.6 m tube is ~5 px and
+    // reads as a white scratch. A 4.5 m core with a 15 m halo reads as
+    // lightning, like the v3.2 2-D bolt did.
     const core = new THREE.Mesh(
-      new THREE.TubeGeometry(curve, 24, 1.6, 6, false),
+      new THREE.TubeGeometry(curve, 24, 4.5, 6, false),
       new THREE.MeshBasicMaterial({ color: 0xf5f7ff }),
     );
     const glow = new THREE.Mesh(
-      new THREE.TubeGeometry(curve, 24, 4.5, 6, false),
-      new THREE.MeshBasicMaterial({ color: 0xbfd4ff, transparent: true, opacity: 0.22, depthWrite: false }),
+      new THREE.TubeGeometry(curve, 24, 15, 6, false),
+      new THREE.MeshBasicMaterial({ color: 0xbfd4ff, transparent: true, opacity: 0.35, depthWrite: false }),
     );
     boltMesh.add(core);
     boltMesh.add(glow);
+    // Two branches off the main channel, deterministic (derived from
+    // the bolt's own points, no new randomness).
+    for (let b = 0; b < 2; b += 1) {
+      const idx = 2 + b * 2;
+      if (idx >= pts.length - 1) continue;
+      const p0 = pts[idx];
+      const p1 = pts[idx + 1];
+      const dx = p1.x - p0.x, dy = p1.y - p0.y, dz = p1.z - p0.z;
+      const len = Math.hypot(dx, dy, dz) || 1;
+      let sx = -dz / len, sz = dx / len;
+      if (Math.hypot(sx, sz) < 0.1) { sx = 1; sz = 0; }
+      const side = b === 0 ? 1 : -1;
+      const bpts = [new THREE.Vector3(p0.x, p0.y, p0.z)];
+      for (let k = 1; k <= 3; k += 1) {
+        bpts.push(new THREE.Vector3(
+          p0.x + sx * side * 34 * k + dx * 0.25 * k,
+          p0.y - 42 * k,
+          p0.z + sz * side * 34 * k + dz * 0.25 * k,
+        ));
+      }
+      const bcurve = new THREE.CatmullRomCurve3(bpts);
+      boltMesh.add(new THREE.Mesh(
+        new THREE.TubeGeometry(bcurve, 12, 1.3, 5, false),
+        new THREE.MeshBasicMaterial({ color: 0xf5f7ff }),
+      ));
+      boltMesh.add(new THREE.Mesh(
+        new THREE.TubeGeometry(bcurve, 12, 3.6, 5, false),
+        new THREE.MeshBasicMaterial({ color: 0xbfd4ff, transparent: true, opacity: 0.3, depthWrite: false }),
+      ));
+    }
     sc.add(boltMesh);
     boltLight = new THREE.PointLight(0xdce8ff, 90000, 2200, 1.6);
     boltLight.position.set(pts[0].x, pts[0].y, pts[0].z);
@@ -691,7 +763,12 @@ export function createWorld3D(glCanvas) {
     S.sunSprite.position.set(
       plane.x + sunDir.x * 6800, plane.y + sunDir.y * 6800, plane.z + sunDir.z * 6800,
     );
-    S.hemi.intensity = 1.15 + flash * 0.7;
+    // Fill light sits opposite the sun, above the tail: it lifts the
+    // plane's shadow side for the chase camera. Sun direction untouched.
+    S.fill.position.set(plane.x - sunDir.x * 800, plane.y + 260, plane.z - sunDir.z * 800);
+    S.fill.target.position.set(plane.x, plane.y, plane.z);
+    S.fill.target.updateMatrixWorld();
+    S.hemi.intensity = 1.3 + flash * 0.7;
     S.sun.intensity = 1.7 + flash * 1.1;
 
     // Plane transform.
