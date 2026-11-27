@@ -23,8 +23,9 @@ const seedParam = Number.parseInt(params.get('seed') ?? '', 10);
 const seed = Number.isInteger(seedParam) ? seedParam : Math.floor(Math.random() * 100000);
 
 const canvas = document.getElementById('game');
+const glCanvas = document.getElementById('gl');
 const status = document.getElementById('status');
-const renderer = createRenderer(canvas);
+const renderer = createRenderer(canvas, glCanvas);
 const input = createInput(canvas);
 const audio = createAudio();
 const save = loadSave();
@@ -183,6 +184,13 @@ function handleActions() {
     if (world && world.plane && screen === SCREEN_PLAY) {
       world.plane.gearDown = !world.plane.gearDown;
       world.banner = world.plane.gearDown ? 'GEAR DOWN' : 'GEAR UP';
+      bannerTimer = 1.5;
+    }
+  }
+  if (actions & input.ACTION_CAMERA) {
+    if (screen === SCREEN_PLAY) {
+      const mode = renderer.cycleCamera();
+      world.banner = `CAMERA — ${mode.toUpperCase()}`;
       bannerTimer = 1.5;
     }
   }
