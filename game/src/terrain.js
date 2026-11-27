@@ -244,14 +244,26 @@ export function createTerrain(seed) {
     } else if (h <= 170) {
       base = [94 + n1 * 11, 84 + n2 * 9, 56]; // dry brown hills
     } else if (h <= 230) {
-      base = [100 + n1 * 9, 104 + n2 * 7, 110]; // rock
+      // Rock with scree banding: light patches break the uniform dark
+      // face so a peak reads as banded rock, not a flat pyramid.
+      const s = 0.5 + 0.5 * rng.noise2(x * 0.008 + 3, z * 0.008 - 5);
+      const rock = [100 + n1 * 9, 104 + n2 * 7, 110];
+      const scree = [148, 142, 132];
+      const m = s * 0.55;
+      base = [
+        rock[0] * (1 - m) + scree[0] * m,
+        rock[1] * (1 - m) + scree[1] * m,
+        rock[2] * (1 - m) + scree[2] * m,
+      ];
     } else {
       base = [132 + n1 * 9, 136 + n2 * 7, 144]; // high grey
     }
-    // Cliff shading: steep faces go dark and desaturated.
+    // Cliff shading: steep faces go dark and desaturated, but only
+    // gently — the old 0.45 darkening turned whole peaks into flat
+    // black pyramids.
     const cliff = Math.max(0, Math.min(1, (slope - 0.45) / 0.6));
     if (cliff > 0) {
-      const dark = 1 - cliff * 0.45;
+      const dark = 1 - cliff * 0.28;
       base = [base[0] * dark * 0.9, base[1] * dark * 0.9, base[2] * dark];
     }
     // The sea gets an even gentler multiplier than the land: the
