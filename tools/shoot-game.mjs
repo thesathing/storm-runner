@@ -27,7 +27,7 @@ await new Promise((r) => server.listen(0, "127.0.0.1", r));
 const port = server.address().port;
 
 const exe = process.env.HOME + "/.cache/ms-playwright/chromium-1255/chrome-linux64/chrome";
-const browser = await chromium.launch({ executablePath: exe, headless: true, args: ["--no-sandbox", "--disable-gpu"] });
+const browser = await chromium.launch({ executablePath: exe, headless: true, args: ["--no-sandbox", "--use-gl=angle", "--use-angle=swiftshader"] });
 const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
 const errors = [];
 const badRequests = [];
