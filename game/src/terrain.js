@@ -241,9 +241,9 @@ export function createTerrain(seed) {
       base = [58 + n1 * 10, 100 + n1 * 12, 52 + n2 * 8]; // green lowland
     } else if (h <= 55) {
       base = [46 + n1 * 9, 84 + n1 * 10, 46 + n2 * 7]; // darker forest
-    } else if (h <= 120) {
+    } else if (h <= 170) {
       base = [94 + n1 * 11, 84 + n2 * 9, 56]; // dry brown hills
-    } else if (h <= 175) {
+    } else if (h <= 230) {
       base = [100 + n1 * 9, 104 + n2 * 7, 110]; // rock
     } else {
       base = [132 + n1 * 9, 136 + n2 * 7, 144]; // high grey
